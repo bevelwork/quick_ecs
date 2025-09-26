@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -181,6 +182,12 @@ func main() {
 	case "check":
 		checkAction(ctx, config, selectedCluster, selectedService, taskDef)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "check"})
+	case "service-config":
+		showServiceConfiguration(ctx, config, selectedCluster.Name, selectedService.Name)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "service-config"})
+	case "task-defs":
+		showTaskDefinitionHistory(ctx, config, selectedService.TaskDefinition)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "task-defs"})
 	}
 }
 
@@ -332,6 +339,142 @@ func getTaskDefinition(ctx context.Context, config *Config, taskDefArn string) (
 	return output.TaskDefinition, nil
 }
 
+// showServiceConfiguration prints details from DescribeServices for a single service
+func showServiceConfiguration(ctx context.Context, config *Config, clusterName, serviceName string) {
+	out, err := config.ECSClient.DescribeServices(ctx, &ecs.DescribeServicesInput{Cluster: &clusterName, Services: []string{serviceName}})
+	if err != nil || len(out.Services) == 0 {
+		fmt.Printf("%s Unable to describe service: %v\n", color("Error:", ColorRed), err)
+		return
+	}
+	s := out.Services[0]
+	fmt.Printf("\n%s\n", color("Service Configuration:", ColorBlue))
+	fmt.Printf("Name: %s\n", *s.ServiceName)
+	fmt.Printf("Status: %s  Running: %d  Desired: %d\n", *s.Status, s.RunningCount, s.DesiredCount)
+	if s.TaskDefinition != nil {
+		fmt.Printf("TaskDefinition: %s\n", *s.TaskDefinition)
+	}
+	if len(s.LoadBalancers) > 0 && s.LoadBalancers[0].TargetGroupArn != nil {
+		fmt.Printf("TargetGroup: %s\n", *s.LoadBalancers[0].TargetGroupArn)
+	}
+	if s.DeploymentConfiguration != nil {
+		dc := s.DeploymentConfiguration
+		if dc.MinimumHealthyPercent != nil && dc.MaximumPercent != nil {
+			fmt.Printf("Deployment: MinHealthy=%d%% MaxPercent=%d%%\n", *dc.MinimumHealthyPercent, *dc.MaximumPercent)
+		}
+	}
+	if s.NetworkConfiguration != nil && s.NetworkConfiguration.AwsvpcConfiguration != nil {
+		awsvpc := s.NetworkConfiguration.AwsvpcConfiguration
+		if len(awsvpc.Subnets) > 0 {
+			fmt.Printf("Subnets: %s\n", strings.Join(awsvpc.Subnets, ", "))
+		}
+		if len(awsvpc.SecurityGroups) > 0 {
+			fmt.Printf("SecurityGroups: %s\n", strings.Join(awsvpc.SecurityGroups, ", "))
+		}
+	}
+}
+
+// showTaskDefinitionHistory lists up to 10 recent task definition revisions for the same family as provided ARN
+func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn string) error {
+	// Extract family from ARN: arn:aws:ecs:region:acct:task-definition/family:revision
+	family := taskDefArn
+	if idx := strings.LastIndex(taskDefArn, ":"); idx != -1 {
+		family = taskDefArn[:idx]
+	}
+	if slash := strings.LastIndex(family, "/"); slash != -1 {
+		family = family[slash+1:]
+	}
+
+	// Get family metadata to determine default revision
+	familyOut, _ := config.ECSClient.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{TaskDefinition: &taskDefArn})
+	var currentInUse string
+	if familyOut != nil && familyOut.TaskDefinition != nil && familyOut.TaskDefinition.TaskDefinitionArn != nil {
+		currentInUse = *familyOut.TaskDefinition.TaskDefinitionArn
+	}
+
+	// Fetch latest 10 ARNs for family
+	listOut, err := config.ECSClient.ListTaskDefinitions(ctx, &ecs.ListTaskDefinitionsInput{FamilyPrefix: &family, Sort: types.SortOrderDesc, MaxResults: int32Ptr(10)})
+	if err != nil {
+		fmt.Printf("%s Unable to list task definitions: %v\n", color("Error:", ColorRed), err)
+		return err
+	}
+
+	// Determine latest and default
+	latestArn := ""
+	defaultArn := ""
+	if len(listOut.TaskDefinitionArns) > 0 {
+		latestArn = listOut.TaskDefinitionArns[0]
+	}
+	// Default is the highest ACTIVE that service picks by default; ECS has no dedicated default per family across revs,
+	// so we will mark the one whose revision equals the service's task definition family+':'+maxRev among ACTIVE entries.
+	// As a heuristic, mark latest as default if ACTIVE.
+	if latestArn != "" {
+		defaultArn = latestArn
+	}
+
+	fmt.Printf("\n%s\n", color("Task Definition History (latest up to 10):", ColorBlue))
+	for i, arn := range listOut.TaskDefinitionArns {
+		indicators := []string{}
+		if arn == latestArn {
+			indicators = append(indicators, color("latest", ColorGreen))
+		}
+		if arn == defaultArn {
+			indicators = append(indicators, color("default", ColorCyan))
+		}
+		if arn == currentInUse {
+			indicators = append(indicators, color("in-use", ColorYellow))
+		}
+		suffix := ""
+		if len(indicators) > 0 {
+			suffix = " [" + strings.Join(indicators, ", ") + "]"
+		}
+		fmt.Printf("  %2d. %s%s\n", i+1, arn, suffix)
+	}
+
+	// Prompt for selection
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s", color("Select a task definition to view/save (blank to exit): ", ColorYellow))
+	sel, _ := reader.ReadString('\n')
+	sel = strings.TrimSpace(sel)
+	if sel == "" {
+		return nil
+	}
+	idx, err := strconv.Atoi(sel)
+	if err != nil || idx < 1 || idx > len(listOut.TaskDefinitionArns) {
+		fmt.Println("Invalid selection.")
+		return nil
+	}
+	chosenArn := listOut.TaskDefinitionArns[idx-1]
+
+	// Describe selected task definition
+	tdOut, err := config.ECSClient.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{TaskDefinition: &chosenArn})
+	if err != nil || tdOut.TaskDefinition == nil {
+		fmt.Printf("%s Failed to describe task definition: %v\n", color("Error:", ColorRed), err)
+		return err
+	}
+
+	// Pretty-print to terminal
+	pretty, err := json.MarshalIndent(tdOut.TaskDefinition, "", "  ")
+	if err != nil {
+		fmt.Printf("%s Failed to marshal task definition: %v\n", color("Error:", ColorRed), err)
+		return err
+	}
+	fmt.Printf("\n%s\n%s\n", color("Selected Task Definition:", ColorBlue), string(pretty))
+
+	// Build filename: <definition-arn>.<version-number>.json (sanitize ARN for filesystem safety)
+	rev := ""
+	if i := strings.LastIndex(chosenArn, ":"); i != -1 {
+		rev = chosenArn[i+1:]
+	}
+	safeArn := strings.NewReplacer("/", "_", ":", "_", " ", "_").Replace(chosenArn)
+	filename := fmt.Sprintf("%s.%s.json", safeArn, rev)
+	if err := os.WriteFile(filename, pretty, 0600); err != nil {
+		fmt.Printf("%s Failed to write file %s: %v\n", color("Error:", ColorRed), filename, err)
+		return err
+	}
+	fmt.Printf("%s Saved to %s\n", color("Info:", ColorGreen), filename)
+	return nil
+}
+
 // selectCluster displays clusters and allows user to select one.
 func selectCluster(clusters []*ClusterInfo) *ClusterInfo {
 	fmt.Printf("\n%s\n", color("Available ECS Clusters:", ColorBlue))
@@ -461,9 +604,11 @@ func selectAction() string {
 	fmt.Printf("  4. [Conn]/E[x]ec - Connect to container\n")
 	fmt.Printf("  5. [F]orce update service\n")
 	fmt.Printf("  6. [C]heck configuration\n")
+	fmt.Printf("  7. [Svc] Service configuration (describe service)\n")
+	fmt.Printf("  8. [Td]/[Task] Task definition history (latest 10)\n")
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select action (1-6 or shortcut). Blank, or invalid input will exit: ", ColorYellow))
+	fmt.Printf("%s", color("Select action (1-8 or shortcut). Blank, or invalid input will exit: ", ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -487,6 +632,10 @@ func selectAction() string {
 		return "force-update"
 	case "6", "c", "chk", "check":
 		return "check"
+	case "7", "svc", "service", "service-config":
+		return "service-config"
+	case "8", "td", "task", "taskdefs", "task-defs", "task-definition":
+		return "task-defs"
 	default:
 		fmt.Println("Invalid selection. Exiting")
 		os.Exit(0)
@@ -568,6 +717,13 @@ func runRepeatLastAction(ctx context.Context, config *Config, last *LastState) e
 	case "image":
 		fmt.Printf("%s Stored action 'image' requires input; please select it manually.\n", color("Note:", ColorYellow))
 		return nil
+	case "service-config":
+		fmt.Printf("%s Repeating: service configuration for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		showServiceConfiguration(ctx, config, last.ClusterName, last.ServiceName)
+		return nil
+	case "task-defs":
+		fmt.Printf("%s Repeating: task definition history for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		return showTaskDefinitionHistory(ctx, config, *tdArn)
 	default:
 		return fmt.Errorf("unknown stored action: %s", last.Action)
 	}
