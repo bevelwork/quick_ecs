@@ -1,0 +1,63 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine version from release tag
+        id: v
+        run: |
+          # GITHUB_REF_NAME is like v1.0.20250111
+          tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
+          echo "version=$ver" >> $GITHUB_OUTPUT
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+
+      - name: Compute tarball sha256
+        id: sum
+        run: |
+          URL="https://github.com/bevelwork/quick_ecs/archive/refs/tags/${{ steps.v.outputs.tag }}.tar.gz"
+          curl -L "$URL" -o source.tar.gz
+          SHA=$(sha256sum source.tar.gz | awk '{print $1}')
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: bevelwork/homebrew-tap
+          path: tap
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update formula
+        working-directory: tap/Formula
+        run: |
+          FILE=quick-ecs.rb
+          # Replace url and sha256 in the stable section; if commented, uncomment and set
+          if grep -q '^\s*url\s*"https://github.com/bevelwork/quick_ecs' "$FILE"; then
+            sed -i "s|^\s*url\s*\"https://github.com/bevelwork/quick_ecs.*|  url \"${{ steps.sum.outputs.url }}\"|" "$FILE"
+          else
+            # Insert stable url under homepage line
+            awk -v u="  url \"${{ steps.sum.outputs.url }}\"" '1; NR==4{print u}' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
+          fi
+          if grep -q '^\s*sha256\s*"' "$FILE"; then
+            sed -i "s|^\s*sha256\s*\".*\"|  sha256 \"${{ steps.sum.outputs.sha }}\"|" "$FILE"
+          else
+            # Insert sha256 after url
+            awk -v s="  sha256 \"${{ steps.sum.outputs.sha }}\"" '1; /url \\"https:\\/\\/github.com\\/bevelwork\\/quick_ecs/{print s}' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
+          fi
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add "$FILE"
+          git commit -m "quick-ecs: bump to ${{ steps.v.outputs.tag }}"
+          git push
+
+
