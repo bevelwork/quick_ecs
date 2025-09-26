@@ -219,6 +219,7 @@ func executeECSExec(ctx context.Context, config *Config, clusterName, serviceNam
 func tryECSExec(ctx context.Context, config *Config, clusterName, taskARN, containerName string) error {
 	// Build the ECS Exec command
 	cmd := exec.Command("aws", "ecs", "execute-command",
+		"--region", config.Region,
 		"--cluster", clusterName,
 		"--task", taskARN,
 		"--container", containerName,

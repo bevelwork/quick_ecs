@@ -67,14 +67,20 @@ func pollDeploymentCompletion(ctx context.Context, config *Config, clusterName, 
 	// Start throbber in a separate goroutine
 	go func() {
 		i := 0
+		cycle := 1
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
 				return
-			default:
-				fmt.Printf("\r%s Deployment in progress... (cycle %d)", throbberChars[i%len(throbberChars)], attempt+1)
-				time.Sleep(200 * time.Millisecond)
+			case <-ticker.C:
+				fmt.Printf("\r%s Deployment in progress... (cycle %d)", throbberChars[i%len(throbberChars)], cycle)
 				i++
+				// update cycle number every ~10 seconds (matching poll cadence)
+				if i%(1000/200*10) == 0 {
+					cycle++
+				}
 			}
 		}
 	}()

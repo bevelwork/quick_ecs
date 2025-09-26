@@ -208,7 +208,7 @@ func main() {
 	switch action {
 	case "image":
 		updateImageAction(ctx, config, selectedCluster, selectedService, taskDef)
-		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "logs"})
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "image"})
 	case "capacity":
 		updateCapacityAction(ctx, config, selectedCluster, selectedService)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "capacity"})
@@ -418,7 +418,7 @@ func selectCluster(clusters []*ClusterInfo) *ClusterInfo {
 	if err != nil {
 		log.Fatal(err)
 	}
-	input = input[:len(input)-1]
+	input = strings.TrimSpace(input)
 	if input == "" {
 		fmt.Println("Exiting")
 		os.Exit(0)
@@ -477,7 +477,7 @@ func selectService(services []*ServiceInfo) *ServiceInfo {
 	if err != nil {
 		log.Fatal(err)
 	}
-	input = input[:len(input)-1]
+	input = strings.TrimSpace(input)
 	if input == "" {
 		fmt.Println("Exiting")
 		os.Exit(0)

@@ -516,24 +516,9 @@ func validateSecurityGroupRules(ctx context.Context, config *Config, securityGro
 				// Check if this rule allows the port
 				if rule.FromPort != nil && rule.ToPort != nil {
 					if port >= *rule.FromPort && port <= *rule.ToPort {
-						// Check if it's not restricted to specific IPs (0.0.0.0/0 or ::/0)
-						if len(rule.IpRanges) > 0 {
-							for _, ipRange := range rule.IpRanges {
-								if ipRange.CidrIp != nil && (*ipRange.CidrIp == "0.0.0.0/0" || *ipRange.CidrIp == "::/0") {
-									portAllowed = true
-									break
-								}
-							}
-						}
-						if len(rule.Ipv6Ranges) > 0 {
-							for _, ipv6Range := range rule.Ipv6Ranges {
-								if ipv6Range.CidrIpv6 != nil && *ipv6Range.CidrIpv6 == "::/0" {
-									portAllowed = true
-									break
-								}
-							}
-						}
-						if portAllowed {
+						// Allow any CIDR (including restricted ones) or security group references
+						if len(rule.UserIdGroupPairs) > 0 || len(rule.IpRanges) > 0 || len(rule.Ipv6Ranges) > 0 {
+							portAllowed = true
 							break
 						}
 					}
@@ -541,11 +526,11 @@ func validateSecurityGroupRules(ctx context.Context, config *Config, securityGro
 			}
 
 			if portAllowed {
-				fmt.Printf("      ✅ Port %d is accessible\n", port)
+				fmt.Printf("      ✅ Port %d has at least one inbound rule\n", port)
 				hasPortAccess = true
 			} else {
-				issues = append(issues, fmt.Sprintf("Security group %s does not allow inbound access to port %d", *sg.GroupId, port))
-				fmt.Printf("      ❌ %s\n", color(fmt.Sprintf("Port %d not accessible", port), ColorRed))
+				issues = append(issues, fmt.Sprintf("Security group %s may not allow inbound access to port %d", *sg.GroupId, port))
+				fmt.Printf("      ❌ %s\n", color(fmt.Sprintf("No inbound rule found for port %d", port), ColorRed))
 			}
 		}
 
@@ -792,7 +777,7 @@ func checkSecretsConfiguration(ctx context.Context, config *Config, taskDef *typ
 
 	hasSecrets := false
 	for _, container := range taskDef.ContainerDefinitions {
-		if container.Secrets != nil && len(container.Secrets) > 0 {
+		if len(container.Secrets) > 0 {
 			hasSecrets = true
 			fmt.Printf("  ✅ Container has secrets configured\n")
 
@@ -1054,9 +1039,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	}
 
 	albSgIds := make([]string, len(lb.SecurityGroups))
-	for i, sg := range lb.SecurityGroups {
-		albSgIds[i] = sg
-	}
+	copy(albSgIds, lb.SecurityGroups)
 
 	// Inbound check on 80/443
 	albSgIssues, albSgWarnings := validateAlbSecurityGroups(ctx, config, albSgIds)

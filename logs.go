@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
@@ -130,9 +131,9 @@ func getLogStreams(ctx context.Context, config *Config, logGroupName string, tas
 
 // streamLogs streams logs from the specified log streams
 func streamLogs(ctx context.Context, config *Config, logGroupName string, logStreams []string) error {
-	// Set up signal handling for Ctrl+C
+	// Set up signal handling for Ctrl+C and termination
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, os.Kill)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// Channel to handle user input
 	inputChan := make(chan string, 1)
