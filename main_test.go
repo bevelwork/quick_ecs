@@ -53,3 +53,59 @@ func TestThrobberProgress(t *testing.T) {
 	stop()
 	// If we reach here without deadlock, assume success. Visual inspection recommended when running tests.
 }
+
+// TestSanitizeARN verifies the sanitizeARN function masks account numbers correctly
+func TestSanitizeARN(t *testing.T) {
+	tests := []struct {
+		name        string
+		arn         string
+		privateMode bool
+		expected    string
+	}{
+		{
+			name:        "ECS cluster ARN in private mode",
+			arn:         "arn:aws:ecs:us-east-1:123456789012:cluster/my-cluster",
+			privateMode: true,
+			expected:    "arn:aws:ecs:us-east-1:***:cluster/my-cluster",
+		},
+		{
+			name:        "ECS service ARN in private mode",
+			arn:         "arn:aws:ecs:us-east-1:123456789012:service/my-cluster/my-service",
+			privateMode: true,
+			expected:    "arn:aws:ecs:us-east-1:***:service/my-cluster/my-service",
+		},
+		{
+			name:        "Task definition ARN in private mode",
+			arn:         "arn:aws:ecs:us-east-1:123456789012:task-definition/my-task:1",
+			privateMode: true,
+			expected:    "arn:aws:ecs:us-east-1:***:task-definition/my-task:1",
+		},
+		{
+			name:        "ARN in non-private mode",
+			arn:         "arn:aws:ecs:us-east-1:123456789012:cluster/my-cluster",
+			privateMode: false,
+			expected:    "arn:aws:ecs:us-east-1:123456789012:cluster/my-cluster",
+		},
+		{
+			name:        "Invalid ARN format",
+			arn:         "not-an-arn",
+			privateMode: true,
+			expected:    "not-an-arn",
+		},
+		{
+			name:        "Short ARN",
+			arn:         "arn:aws:ecs:us-east-1",
+			privateMode: true,
+			expected:    "arn:aws:ecs:us-east-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeARN(tt.arn, tt.privateMode)
+			if result != tt.expected {
+				t.Errorf("sanitizeARN(%q, %v) = %q, want %q", tt.arn, tt.privateMode, result, tt.expected)
+			}
+		})
+	}
+}

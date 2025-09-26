@@ -109,7 +109,7 @@ func main() {
 		log.Fatal("No clusters found")
 	}
 
-	selectedCluster := selectCluster(clusters)
+	selectedCluster := selectCluster(clusters, config)
 	fmt.Printf(
 		"Selected cluster: %s\n",
 		colorBold(selectedCluster.Name, ColorGreen),
@@ -354,10 +354,10 @@ func showServiceConfiguration(ctx context.Context, config *Config, clusterName, 
 	fmt.Printf("Name: %s\n", *s.ServiceName)
 	fmt.Printf("Status: %s  Running: %d  Desired: %d\n", *s.Status, s.RunningCount, s.DesiredCount)
 	if s.TaskDefinition != nil {
-		fmt.Printf("TaskDefinition: %s\n", *s.TaskDefinition)
+		fmt.Printf("TaskDefinition: %s\n", sanitizeARN(*s.TaskDefinition, config.PrivateMode))
 	}
 	if len(s.LoadBalancers) > 0 && s.LoadBalancers[0].TargetGroupArn != nil {
-		fmt.Printf("TargetGroup: %s\n", *s.LoadBalancers[0].TargetGroupArn)
+		fmt.Printf("TargetGroup: %s\n", sanitizeARN(*s.LoadBalancers[0].TargetGroupArn, config.PrivateMode))
 	}
 	if s.DeploymentConfiguration != nil {
 		dc := s.DeploymentConfiguration
@@ -475,7 +475,7 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 		if len(indicators) > 0 {
 			suffix = " [" + strings.Join(indicators, ", ") + "]"
 		}
-		fmt.Printf("  %2d. %s%s\n", i+1, arn, suffix)
+		fmt.Printf("  %2d. %s%s\n", i+1, sanitizeARN(arn, config.PrivateMode), suffix)
 	}
 
 	// Prompt for selection
@@ -524,7 +524,7 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 }
 
 // selectCluster displays clusters and allows user to select one.
-func selectCluster(clusters []*ClusterInfo) *ClusterInfo {
+func selectCluster(clusters []*ClusterInfo, config *Config) *ClusterInfo {
 	fmt.Printf("\n%s\n", color("Available ECS Clusters:", ColorBlue))
 
 	// Offer 0th option if last state exists
@@ -553,7 +553,7 @@ func selectCluster(clusters []*ClusterInfo) *ClusterInfo {
 		statusColor := colorClusterStatus(cluster.Status)
 		entry := fmt.Sprintf(
 			"%3d. %-*s %s [%s] (%d tasks, %d services)",
-			i+1, longestName, cluster.Name, cluster.ARN,
+			i+1, longestName, cluster.Name, sanitizeARN(cluster.ARN, config.PrivateMode),
 			color(cluster.Status, statusColor),
 			cluster.RunningTasks, cluster.ActiveServices,
 		)

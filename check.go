@@ -159,7 +159,7 @@ func checkIAMRoles(ctx context.Context, config *Config, taskDef *types.TaskDefin
 		issues = append(issues, "Execution role is missing")
 		fmt.Printf("  ❌ %s\n", color("Execution role is missing", ColorRed))
 	} else {
-		fmt.Printf("  ✅ Execution role: %s\n", *taskDef.ExecutionRoleArn)
+		fmt.Printf("  ✅ Execution role: %s\n", sanitizeARN(*taskDef.ExecutionRoleArn, config.PrivateMode))
 
 		// Check if execution role exists and has required policies
 		roleName := extractRoleName(*taskDef.ExecutionRoleArn)
@@ -173,7 +173,7 @@ func checkIAMRoles(ctx context.Context, config *Config, taskDef *types.TaskDefin
 		warnings = append(warnings, "Task role is missing - containers will run with execution role permissions")
 		fmt.Printf("  ⚠️  %s\n", color("Task role is missing", ColorYellow))
 	} else {
-		fmt.Printf("  ✅ Task role: %s\n", *taskDef.TaskRoleArn)
+		fmt.Printf("  ✅ Task role: %s\n", sanitizeARN(*taskDef.TaskRoleArn, config.PrivateMode))
 
 		// Check if task role exists
 		roleName := extractRoleName(*taskDef.TaskRoleArn)
@@ -917,7 +917,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	}
 
 	tg := tgOut.TargetGroups[0]
-	fmt.Printf("  ✅ Target group: %s\n", *tg.TargetGroupArn)
+	fmt.Printf("  ✅ Target group: %s\n", sanitizeARN(*tg.TargetGroupArn, config.PrivateMode))
 
 	// If deployment failed due to health checks, print detailed health check configuration
 	if healthFailed {
@@ -988,7 +988,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	}
 
 	lb := lbOut.LoadBalancers[0]
-	fmt.Printf("  ✅ Load balancer: %s (%s)\n", *lb.LoadBalancerName, *lb.LoadBalancerArn)
+	fmt.Printf("  ✅ Load balancer: %s (%s)\n", *lb.LoadBalancerName, sanitizeARN(*lb.LoadBalancerArn, config.PrivateMode))
 
 	// Validate listeners exist
 	lsOut, err := config.ELBv2Client.DescribeListeners(ctx, &elasticloadbalancingv2.DescribeListenersInput{LoadBalancerArn: lb.LoadBalancerArn})

@@ -164,3 +164,22 @@ func startThrobber(message string) (stop func()) {
 	}()
 	return func() { close(done) }
 }
+
+// sanitizeARN masks account numbers in ARNs when private mode is active
+func sanitizeARN(arn string, privateMode bool) string {
+	if !privateMode {
+		return arn
+	}
+
+	// ARN format: arn:partition:service:region:account-id:resource-type/resource
+	// We want to mask the account-id part (4th colon-separated segment)
+	parts := strings.Split(arn, ":")
+	if len(parts) >= 5 {
+		// Mask the account ID (4th segment, index 4)
+		parts[4] = "***"
+		return strings.Join(parts, ":")
+	}
+
+	// If it doesn't match expected ARN format, return as-is
+	return arn
+}
