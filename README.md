@@ -1,12 +1,31 @@
 # Quick ECS
 
-A simple Go CLI for quickly inspecting and managing Amazon ECS services. It helps you list clusters and services, inspect configs, review health checks, stream logs, exec into containers, adjust capacity, and more — with fast, readable output designed for day-to-day operations and troubleshooting.
+A simple Go CLI for quickly inspecting and managing Amazon ECS services. 
+It helps you list clusters and services, inspect configs, review health checks, 
+stream logs, exec into containers, adjust capacity, and more — with fast, 
+readable output designed for day-to-day operations and troubleshooting.
 
-## ✨ Features
+Part of the `Quick Tools` family of tools from [Bevel Work](https://bevel.work/quick-tools).
 
-- Interactive selection of ECS clusters and services
-- Task definition history (latest up to 10) with indicators: latest, default, in-use
-- Service configuration view (deployment config, load balancer, network info)
+Streaming Logs from an ECS service:
+
+![Streaming Logs](./media/quick-ecs-logs.gif)
+
+Pulling an aggregated list of security groups for your service and related ALBS:
+
+![Security Groups](./media/quick-ecs-sg.gif)
+
+Check common misconfigurations and health checks:
+
+![Check Configuration](./media/quick-ecs-check.gif)
+
+## ✨ All Features
+
+- Simple navigation for `ecs exec`. (Get a shell to a container via ECS Exec)
+- Quickly get status of all ECS clusters and services
+- Pull task and service configurations and compare with the latest deployment
+- Set service capacity, and force new deployments
+- Update service image versions
 - Security groups view
   - Shows ALB and Task security groups
   - Aggregates inbound/outbound rules across SGs
@@ -15,26 +34,17 @@ A simple Go CLI for quickly inspecting and managing Amazon ECS services. It help
 - Health checks view
   - Task definition container health checks (command, intervals/timeouts, estimated time to unhealthy)
   - ALB Target Group health checks (protocol, path/port, thresholds, matcher)
-- Logs streaming (CloudWatch Logs)
-- Exec into running container (ECS Exec)
-- Update image (register new task def and deploy)
-- Update capacity (min/desired/max with rolling constraints)
-- Force new deployment
-- Private mode (hide account info for screenshots)
 
 ## Demo (examples)
 
 ```bash
-quick_ecs --version
-quick_ecs --region us-east-1
+quick_ecs # Default 
+quick_ecs --region us-east-1 # Overried profile region
+
+AWS_PROFILE=my-profile quick_ecs
+aws-vault exec my-profile -- quick_ecs
+granted --profile my-profile quick_ecs
 ```
-
-During execution you’ll be prompted to select a cluster and service, then an action from the alphabetized menu:
-
-- Capacity, Check configuration, Exec, Force update, Health checks,
-  Image, Logs, Service configuration, Task definition history
-
-You can also type shortcuts (e.g., `e` for Exec, `t` for Task defs, `s` for Service config, `h` for Health checks).
 
 ## Install
 
@@ -42,45 +52,18 @@ You can also type shortcuts (e.g., `e` for Exec, `t` for Task defs, `s` for Serv
 - Go 1.24.4 or later
 - AWS CLI v2 (required for ECS Exec integration)
 
+### Build from Brew
+```bash
+brew tap bevelwork/tools
+brew install quick_ecs
+quick_ecs --version
+```
+
 ### Install with Go
 ```bash
 go install github.com/bevelwork/quick_ecs@latest
 quick_ecs --version
 ```
-
-### Build from Source
-```bash
-git clone https://github.com/bevelwork/quick_ecs.git
-cd quick_ecs
-make build # or: go build -o quick_ecs .
-./quick_ecs --version
-```
-
-## Usage
-
-```bash
-# Default region (or respect your environment)
-quick_ecs
-
-# Specify region
-quick_ecs --region us-east-1
-
-# Hide account/ARN details in the header (good for screenshots)
-quick_ecs --private
-```
-
-After selecting a cluster and service, choose an action:
-
-- Image: Update container image (register new task def + optional force deploy)
-- Capacity: Update service min/desired/max (respects rolling deploy constraints)
-- Logs: Stream CloudWatch Logs (interactive – press Enter to fetch new logs)
-- Exec: Establish terminal session to a container via ECS Exec
-- Force update: Trigger a new deployment
-- Check configuration: Run a set of service checks (IAM roles, ports, ALB, secrets, etc.)
-- Service configuration: Describe the service and show core settings
-- Task definition history: Show latest revisions with indicators
-- Health checks: Show task and ALB health checks with timing guidance
-- Security groups: Show ALB/Task SGs and cumulative rules
 
 ## Notes on Select Actions
 
