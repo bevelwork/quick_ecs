@@ -54,7 +54,7 @@ granted --profile my-profile quick_ecs
 
 ### Build from Brew
 ```bash
-brew tap bevelwork/tools
+brew tap bevelwork/tap
 brew install quick_ecs
 quick_ecs --version
 ```
