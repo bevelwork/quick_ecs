@@ -120,4 +120,4 @@ The binary supports `--version` and prints either an ldflags-injected build vers
 
 ## License
 
-MIT
+Apache 2.0
