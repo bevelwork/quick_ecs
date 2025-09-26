@@ -38,12 +38,12 @@ Check common misconfigurations and health checks:
 ## Demo (examples)
 
 ```bash
-quick_ecs # Default 
-quick_ecs --region us-east-1 # Overried profile region
+quick-ecs # Default 
+quick-ecs --region us-east-1 # Overried profile region
 
-AWS_PROFILE=my-profile quick_ecs
-aws-vault exec my-profile -- quick_ecs
-granted --profile my-profile quick_ecs
+AWS_PROFILE=my-profile quick-ecs
+aws-vault exec my-profile -- quick-ecs
+granted --profile my-profile quick-ecs
 ```
 
 ## Install
@@ -55,14 +55,14 @@ granted --profile my-profile quick_ecs
 ### Build from Brew
 ```bash
 brew tap bevelwork/tap
-brew install quick_ecs
-quick_ecs --version
+brew install quick-ecs
+quick-ecs --version
 ```
 
 ### Install with Go
 ```bash
 go install github.com/bevelwork/quick_ecs@latest
-quick_ecs --version
+quick-ecs --version
 ```
 
 ## Notes on Select Actions
