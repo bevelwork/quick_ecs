@@ -2,10 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to release (from version/version.go)"
-        required: false
   push:
     branches: [ main, master ]
 
@@ -13,32 +9,59 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  build-release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [ linux, darwin, windows ]
+        goarch: [ amd64, arm64 ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Resolve version from version/version.go via binary
+      - name: Resolve version from code
         id: ver
         run: |
           ver=$(go run . --version)
           echo "resolved=$ver" >> $GITHUB_OUTPUT
-          echo "GORELEASER_CURRENT_TAG=v${ver}" >> $GITHUB_ENV
 
-      - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          BIN=quick_ecs-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then BIN="$BIN.exe"; fi
+          echo "building $BIN"
+          go build -ldflags "-X main.version=${{ steps.ver.outputs.resolved }}" -o "$BIN" .
+          echo "ASSET=$BIN" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
+
+  publish:
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: quick_ecs v${{ github.run_number }}
+          files: dist/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
