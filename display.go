@@ -142,3 +142,25 @@ func showProgressWithResult[T any](message string, fn func() (T, error)) (T, err
 		}
 	}
 }
+
+// startThrobber starts a spinner with a fixed message and returns a stop function.
+// Safe to call from long-running operations where you cannot wrap the whole body in a closure.
+func startThrobber(message string) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		i := 0
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				fmt.Printf("\r\033[K")
+				return
+			case <-ticker.C:
+				fmt.Printf("\r%s %s", throbberChars[i%len(throbberChars)], message)
+				i++
+			}
+		}
+	}()
+	return func() { close(done) }
+}
