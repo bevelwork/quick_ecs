@@ -1,0 +1,44 @@
+project_name: quick_ecs
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: quick_ecs
+    main: .
+    binary: quick_ecs
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    mod_timestamp: {{ .CommitDate }}
+
+archives:
+  - id: archive
+    builds: [quick_ecs]
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums_{{ .Version }}.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+release:
+  draft: false
+  prerelease: auto
+  replace_existing_draft: true
+  mode: replace
+

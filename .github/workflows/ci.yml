@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify modules
+        run: |
+          go mod tidy
+          git diff --exit-code || (echo "go mod tidy changed files" && exit 1)
+          go mod verify
+
+      - name: Build
+        run: |
+          go build -v ./...
+
+      - name: Test
+        env:
+          AWS_REGION: us-east-1
+        run: |
+          go test -v ./...
+
+
