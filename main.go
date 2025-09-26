@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
@@ -185,9 +186,15 @@ func main() {
 	case "service-config":
 		showServiceConfiguration(ctx, config, selectedCluster.Name, selectedService.Name)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "service-config"})
+	case "security-groups":
+		showSecurityGroups(ctx, config, selectedCluster.Name, selectedService.Name)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "security-groups"})
 	case "task-defs":
 		showTaskDefinitionHistory(ctx, config, selectedService.TaskDefinition)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "task-defs"})
+	case "healthchecks":
+		showHealthChecks(ctx, config, selectedCluster.Name, selectedService, taskDef)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "healthchecks"})
 	}
 }
 
@@ -288,10 +295,7 @@ func getServicesWithProgress(ctx context.Context, config *Config, clusterName st
 		batchNum := (i / batchSize) + 1
 		fmt.Printf("⠋ Processing batch %d/%d (%d services)...\r", batchNum, totalBatches, len(serviceArns))
 
-		end := i + batchSize
-		if end > len(serviceArns) {
-			end = len(serviceArns)
-		}
+		end := min(i+batchSize, len(serviceArns))
 		batch := serviceArns[i:end]
 
 		describeOutput, err := config.ECSClient.DescribeServices(ctx, &ecs.DescribeServicesInput{
@@ -371,6 +375,413 @@ func showServiceConfiguration(ctx context.Context, config *Config, clusterName, 
 			fmt.Printf("SecurityGroups: %s\n", strings.Join(awsvpc.SecurityGroups, ", "))
 		}
 	}
+
+	// --- Security Group Configuration ---
+	fmt.Printf("\n%s\n", color("Security Group Configuration:", ColorBlue))
+
+	// Step 1: Resolve ALB SGs and VPC
+	albSgIds, vpcId := resolveAlbSecurityGroups(ctx, config, s)
+	if len(albSgIds) > 0 {
+		printSgListWithNamesMultiline(ctx, config, "ALB SecurityGroups:", albSgIds)
+		// Aggregated rules for ALB SGs
+		displayAggregatedSgRules(ctx, config, albSgIds, "ALB")
+	} else {
+		fmt.Printf("ALB SecurityGroups: (none or not applicable)\n")
+	}
+
+	// Step 2: Resolve Task SGs (awsvpc or EC2 instance-derived)
+	taskSgIds, vpcId := resolveTaskSecurityGroups(ctx, config, clusterName, serviceName, s, vpcId)
+	if len(taskSgIds) > 0 {
+		printSgListWithNamesMultiline(ctx, config, "Task SecurityGroups:", taskSgIds)
+		// Aggregated rules for Task SGs
+		displayAggregatedSgRules(ctx, config, taskSgIds, "Task")
+	} else {
+		fmt.Printf("Task SecurityGroups: (none or not applicable)\n")
+	}
+
+	// --- Network Info ---
+	fmt.Printf("\n%s\n", color("Network Info:", ColorBlue))
+	// Step 3: Determine subnets from service config (awsvpc)
+	var subnets []string
+	if s.NetworkConfiguration != nil && s.NetworkConfiguration.AwsvpcConfiguration != nil {
+		subnets = append(subnets, s.NetworkConfiguration.AwsvpcConfiguration.Subnets...)
+	}
+
+	// Step 4: Describe subnets for names and VPC, fallback to existing VPC ID
+	vpcFromSubnets, formatted := formatSubnetsWithNames(ctx, config, subnets)
+	if vpcId == "" {
+		vpcId = vpcFromSubnets
+	}
+	fmt.Printf("VPC: %s\n", vpcId)
+	if len(formatted) > 0 {
+		fmt.Printf("Subnets: %s\n", strings.Join(formatted, ", "))
+	} else if len(subnets) > 0 {
+		fmt.Printf("Subnets: %s\n", strings.Join(subnets, ", "))
+	} else {
+		fmt.Printf("Subnets: (none or not applicable)\n")
+	}
+}
+
+// showSecurityGroups prints ALB and Task security group configuration only
+func showSecurityGroups(ctx context.Context, config *Config, clusterName, serviceName string) {
+	out, err := config.ECSClient.DescribeServices(ctx, &ecs.DescribeServicesInput{Cluster: &clusterName, Services: []string{serviceName}})
+	if err != nil || len(out.Services) == 0 {
+		fmt.Printf("%s Unable to describe service: %v\n", color("Error:", ColorRed), err)
+		return
+	}
+	s := out.Services[0]
+	fmt.Printf("\n%s\n", color("Security Group Configuration:", ColorBlue))
+	albSgIds, _ := resolveAlbSecurityGroups(ctx, config, s)
+	if len(albSgIds) > 0 {
+		printSgListWithNamesMultiline(ctx, config, "ALB SecurityGroups:", albSgIds)
+		displayAggregatedSgRules(ctx, config, albSgIds, "ALB")
+	} else {
+		fmt.Printf("ALB SecurityGroups: (none or not applicable)\n")
+	}
+	taskSgIds, _ := resolveTaskSecurityGroups(ctx, config, clusterName, serviceName, s, "")
+	if len(taskSgIds) > 0 {
+		printSgListWithNamesMultiline(ctx, config, "Task SecurityGroups:", taskSgIds)
+		displayAggregatedSgRules(ctx, config, taskSgIds, "Task")
+	} else {
+		fmt.Printf("Task SecurityGroups: (none or not applicable)\n")
+	}
+}
+
+// displayAggregatedSgRules prints cumulative inbound and outbound rules for the provided SGs
+func displayAggregatedSgRules(ctx context.Context, config *Config, sgIds []string, label string) {
+	if len(sgIds) == 0 {
+		return
+	}
+	out, err := config.EC2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: sgIds})
+	if err != nil || len(out.SecurityGroups) == 0 {
+		return
+	}
+	// Build name map and aggregate rules
+	nameOf := func(sg ec2types.SecurityGroup) string {
+		name := ""
+		if sg.GroupName != nil {
+			name = *sg.GroupName
+		}
+		if name == "" {
+			return *sg.GroupId
+		}
+		return fmt.Sprintf("%s(%s)", *sg.GroupId, name)
+	}
+
+	type ruleKey struct {
+		dir, proto string
+		from, to   int32
+		src        string
+	}
+	agg := map[ruleKey][]string{}
+
+	// Inbound
+	for _, sg := range out.SecurityGroups {
+		idWithName := nameOf(sg)
+		for _, p := range sg.IpPermissions {
+			proto := ""
+			if p.IpProtocol != nil {
+				proto = *p.IpProtocol
+			}
+			from, to := int32(-1), int32(-1)
+			if p.FromPort != nil {
+				from = *p.FromPort
+			}
+			if p.ToPort != nil {
+				to = *p.ToPort
+			}
+			// IPv4 ranges
+			for _, r := range p.IpRanges {
+				cidr := ""
+				if r.CidrIp != nil {
+					cidr = *r.CidrIp
+				}
+				k := ruleKey{"in", proto, from, to, cidr}
+				agg[k] = append(agg[k], idWithName)
+			}
+			// IPv6 ranges
+			for _, r := range p.Ipv6Ranges {
+				cidr := ""
+				if r.CidrIpv6 != nil {
+					cidr = *r.CidrIpv6
+				}
+				k := ruleKey{"in", proto, from, to, cidr}
+				agg[k] = append(agg[k], idWithName)
+			}
+			// SG references
+			for _, r := range p.UserIdGroupPairs {
+				src := "sg-unknown"
+				if r.GroupId != nil {
+					src = *r.GroupId
+				}
+				k := ruleKey{"in", proto, from, to, src}
+				agg[k] = append(agg[k], idWithName)
+			}
+		}
+	}
+	// Outbound
+	for _, sg := range out.SecurityGroups {
+		idWithName := nameOf(sg)
+		for _, p := range sg.IpPermissionsEgress {
+			proto := ""
+			if p.IpProtocol != nil {
+				proto = *p.IpProtocol
+			}
+			from, to := int32(-1), int32(-1)
+			if p.FromPort != nil {
+				from = *p.FromPort
+			}
+			if p.ToPort != nil {
+				to = *p.ToPort
+			}
+			for _, r := range p.IpRanges {
+				cidr := ""
+				if r.CidrIp != nil {
+					cidr = *r.CidrIp
+				}
+				k := ruleKey{"out", proto, from, to, cidr}
+				agg[k] = append(agg[k], idWithName)
+			}
+			for _, r := range p.Ipv6Ranges {
+				cidr := ""
+				if r.CidrIpv6 != nil {
+					cidr = *r.CidrIpv6
+				}
+				k := ruleKey{"out", proto, from, to, cidr}
+				agg[k] = append(agg[k], idWithName)
+			}
+			for _, r := range p.UserIdGroupPairs {
+				src := "sg-unknown"
+				if r.GroupId != nil {
+					src = *r.GroupId
+				}
+				k := ruleKey{"out", proto, from, to, src}
+				agg[k] = append(agg[k], idWithName)
+			}
+		}
+	}
+
+	// Pretty print
+	fmt.Printf("  %s cumulative rules:\n", label)
+	// Collect keys for stable order
+	keys := make([]ruleKey, 0, len(agg))
+	for k := range agg {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].dir != keys[j].dir {
+			return keys[i].dir < keys[j].dir
+		}
+		if keys[i].proto != keys[j].proto {
+			return keys[i].proto < keys[j].proto
+		}
+		if keys[i].from != keys[j].from {
+			return keys[i].from < keys[j].from
+		}
+		if keys[i].to != keys[j].to {
+			return keys[i].to < keys[j].to
+		}
+		return keys[i].src < keys[j].src
+	})
+	for _, k := range keys {
+		dirLabel := ""
+		if k.dir == "in" {
+			dirLabel = color("[In]", ColorGreen)
+		} else {
+			dirLabel = color("[Out]", ColorBlue)
+		}
+		portStr := "all"
+		if k.from >= 0 && k.to >= 0 {
+			if k.from == k.to {
+				portStr = fmt.Sprintf("%d", k.from)
+			} else {
+				portStr = fmt.Sprintf("%d-%d", k.from, k.to)
+			}
+		}
+		// Build compact SG list: SGs: abcd, 1234, ... (last 4 of GroupId inside each nameOf value)
+		compactIds := make([]string, 0, len(agg[k]))
+		for _, h := range agg[k] {
+			// h is like sg-xxxxxxxx(name) or sg-xxxxxxxx
+			id := h
+			if i := strings.Index(h, "("); i != -1 {
+				id = h[:i]
+			}
+			// take last 4 characters of the id
+			suffix := id
+			if len(id) > 4 {
+				suffix = id[len(id)-4:]
+			}
+			compactIds = append(compactIds, suffix)
+		}
+		fmt.Printf("    %s %s %s %s [SGs: %s]\n", dirLabel, k.proto, portStr, k.src, strings.Join(compactIds, ", "))
+	}
+}
+
+// formatSgListWithNames renders SG IDs with their names when available for header lines
+func formatSgListWithNames(ctx context.Context, config *Config, sgIds []string) string {
+	if len(sgIds) == 0 {
+		return ""
+	}
+	out, err := config.EC2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: sgIds})
+	if err != nil || len(out.SecurityGroups) == 0 {
+		return strings.Join(sgIds, ", ")
+	}
+	// Map id -> name
+	names := map[string]string{}
+	for _, sg := range out.SecurityGroups {
+		if sg.GroupId != nil {
+			n := ""
+			if sg.GroupName != nil {
+				n = *sg.GroupName
+			}
+			names[*sg.GroupId] = n
+		}
+	}
+	items := make([]string, 0, len(sgIds))
+	for _, id := range sgIds {
+		if n, ok := names[id]; ok && n != "" {
+			items = append(items, fmt.Sprintf("%s(%s)", id, n))
+		} else {
+			items = append(items, id)
+		}
+	}
+	return strings.Join(items, ", ")
+}
+
+// printSgListWithNamesMultiline prints SGs one-per-line with name colored blue if present
+func printSgListWithNamesMultiline(ctx context.Context, config *Config, header string, sgIds []string) {
+	fmt.Printf("%s\n", header)
+	if len(sgIds) == 0 {
+		return
+	}
+	out, err := config.EC2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: sgIds})
+	if err != nil || len(out.SecurityGroups) == 0 {
+		for _, id := range sgIds {
+			fmt.Printf("  - %s\n", id)
+		}
+		return
+	}
+	// Build name map
+	names := map[string]string{}
+	for _, sg := range out.SecurityGroups {
+		if sg.GroupId != nil {
+			n := ""
+			if sg.GroupName != nil {
+				n = *sg.GroupName
+			}
+			names[*sg.GroupId] = n
+		}
+	}
+	for _, id := range sgIds {
+		if n, ok := names[id]; ok && n != "" {
+			fmt.Printf("  - %s(%s)\n", id, color(n, ColorBlue))
+		} else {
+			fmt.Printf("  - %s\n", id)
+		}
+	}
+}
+
+// resolveAlbSecurityGroups returns the Load Balancer security groups and VPC ID, if available
+func resolveAlbSecurityGroups(ctx context.Context, config *Config, svc types.Service) ([]string, string) {
+	albSgIds := []string{}
+	vpcId := ""
+	if len(svc.LoadBalancers) == 0 || svc.LoadBalancers[0].TargetGroupArn == nil {
+		return albSgIds, vpcId
+	}
+	tgArn := *svc.LoadBalancers[0].TargetGroupArn
+	tgOut, err := config.ELBv2Client.DescribeTargetGroups(ctx, &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{tgArn}})
+	if err != nil || len(tgOut.TargetGroups) == 0 || len(tgOut.TargetGroups[0].LoadBalancerArns) == 0 {
+		return albSgIds, vpcId
+	}
+	lbArn := tgOut.TargetGroups[0].LoadBalancerArns[0]
+	lbOut, err := config.ELBv2Client.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{LoadBalancerArns: []string{lbArn}})
+	if err != nil || len(lbOut.LoadBalancers) == 0 {
+		return albSgIds, vpcId
+	}
+	lb := lbOut.LoadBalancers[0]
+	albSgIds = append(albSgIds, lb.SecurityGroups...)
+	if lb.VpcId != nil {
+		vpcId = *lb.VpcId
+	}
+	return albSgIds, vpcId
+}
+
+// resolveTaskSecurityGroups returns task-level security groups (awsvpc or EC2 instance SGs) and a possibly updated VPC ID
+func resolveTaskSecurityGroups(ctx context.Context, config *Config, clusterName, serviceName string, svc types.Service, vpcId string) ([]string, string) {
+	// awsvpc path
+	if svc.NetworkConfiguration != nil && svc.NetworkConfiguration.AwsvpcConfiguration != nil && len(svc.NetworkConfiguration.AwsvpcConfiguration.SecurityGroups) > 0 {
+		return append([]string{}, svc.NetworkConfiguration.AwsvpcConfiguration.SecurityGroups...), vpcId
+	}
+	// EC2 bridge/host path: derive from instance SGs using a representative running task
+	taskSgIds := []string{}
+	tasks, err := config.ECSClient.ListTasks(ctx, &ecs.ListTasksInput{Cluster: &clusterName, ServiceName: &serviceName, DesiredStatus: types.DesiredStatusRunning})
+	if err != nil || len(tasks.TaskArns) == 0 {
+		return taskSgIds, vpcId
+	}
+	desc, err := config.ECSClient.DescribeTasks(ctx, &ecs.DescribeTasksInput{Cluster: &clusterName, Tasks: tasks.TaskArns[:1]})
+	if err != nil || len(desc.Tasks) == 0 {
+		return taskSgIds, vpcId
+	}
+	t := desc.Tasks[0]
+	if t.ContainerInstanceArn == nil {
+		return taskSgIds, vpcId
+	}
+	ciOut, err := config.ECSClient.DescribeContainerInstances(ctx, &ecs.DescribeContainerInstancesInput{Cluster: &clusterName, ContainerInstances: []string{*t.ContainerInstanceArn}})
+	if err != nil || len(ciOut.ContainerInstances) == 0 || ciOut.ContainerInstances[0].Ec2InstanceId == nil {
+		return taskSgIds, vpcId
+	}
+	iid := *ciOut.ContainerInstances[0].Ec2InstanceId
+	instOut, err := config.EC2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{iid}})
+	if err != nil || len(instOut.Reservations) == 0 || len(instOut.Reservations[0].Instances) == 0 {
+		return taskSgIds, vpcId
+	}
+	inst := instOut.Reservations[0].Instances[0]
+	for _, sg := range inst.SecurityGroups {
+		if sg.GroupId != nil {
+			taskSgIds = append(taskSgIds, *sg.GroupId)
+		}
+	}
+	if vpcId == "" && inst.VpcId != nil {
+		vpcId = *inst.VpcId
+	}
+	return taskSgIds, vpcId
+}
+
+// formatSubnetsWithNames returns VPC ID from first subnet (if present) and subnet IDs formatted with Name tag when available
+func formatSubnetsWithNames(ctx context.Context, config *Config, subnetIds []string) (string, []string) {
+	if len(subnetIds) == 0 {
+		return "", nil
+	}
+	subOut, err := config.EC2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{SubnetIds: subnetIds})
+	if err != nil {
+		return "", nil
+	}
+	nameFor := func(tags []ec2types.Tag) string {
+		for _, t := range tags {
+			if t.Key != nil && *t.Key == "Name" && t.Value != nil {
+				return *t.Value
+			}
+		}
+		return ""
+	}
+	formatted := make([]string, 0, len(subOut.Subnets))
+	vpcId := ""
+	for i, sn := range subOut.Subnets {
+		if i == 0 && sn.VpcId != nil {
+			vpcId = *sn.VpcId
+		}
+		id := ""
+		if sn.SubnetId != nil {
+			id = *sn.SubnetId
+		}
+		n := nameFor(sn.Tags)
+		if n != "" {
+			formatted = append(formatted, fmt.Sprintf("%s(%s)", id, n))
+		} else {
+			formatted = append(formatted, id)
+		}
+	}
+	return vpcId, formatted
 }
 
 // showTaskDefinitionHistory lists up to 10 recent task definition revisions for the same family as provided ARN
@@ -473,6 +884,106 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 	}
 	fmt.Printf("%s Saved to %s\n", color("Info:", ColorGreen), filename)
 	return nil
+}
+
+// showHealthChecks prints task definition container health checks and ALB target group health checks with timeouts
+func showHealthChecks(ctx context.Context, config *Config, clusterName string, service *ServiceInfo, taskDef *types.TaskDefinition) {
+	fmt.Printf("\n%s\n", color("Health Checks Overview:", ColorBlue))
+	fmt.Printf("- %s Task definition health checks run inside the container using a command; they report container health to ECS.\n", color("Task checks:", ColorCyan))
+	fmt.Printf("- %s ALB health checks probe the service endpoint over the network; results depend on VPC networking (subnets, security groups, NACLs, routing) and target port exposure.\n", color("ALB checks:", ColorCyan))
+	fmt.Printf("- Time to mark unhealthy is approximately attempts × interval (typical) or attempts × (interval + timeout) (worst-case), after any start period/grace.\n")
+
+	// 1) Task definition container health checks
+	fmt.Printf("\n%s\n", color("Task Definition Health Checks:", ColorBlue))
+	hasHC := false
+	secFmt := func(s int32) string {
+		if s >= 60 {
+			return fmt.Sprintf("%ds (~%dm%ds)", s, s/60, s%60)
+		}
+		return fmt.Sprintf("%ds", s)
+	}
+	for _, c := range taskDef.ContainerDefinitions {
+		if c.HealthCheck != nil {
+			hasHC = true
+			hc := c.HealthCheck
+			cmd := []string{}
+			if hc.Command != nil {
+				cmd = hc.Command
+			}
+			interval := int32(30)
+			timeout := int32(5)
+			retries := int32(3)
+			startPeriod := int32(0)
+			if hc.Interval != nil {
+				interval = *hc.Interval
+			}
+			if hc.Timeout != nil {
+				timeout = *hc.Timeout
+			}
+			if hc.Retries != nil {
+				retries = *hc.Retries
+			}
+			if hc.StartPeriod != nil {
+				startPeriod = *hc.StartPeriod
+			}
+			typical := startPeriod + retries*interval
+			worst := startPeriod + retries*(interval+timeout)
+			fmt.Printf("- Container: %s\n  Command: %s\n  Interval: %s  Timeout: %s  Retries: %d  StartPeriod: %s\n  Approx time until marked UNHEALTHY: typical %s, worst-case %s\n",
+				*c.Name, strings.Join(cmd, " "), secFmt(interval), secFmt(timeout), retries, secFmt(startPeriod), secFmt(typical), secFmt(worst))
+		}
+	}
+	if !hasHC {
+		fmt.Printf("(none configured)\n")
+	}
+
+	// 2) ALB health checks
+	fmt.Printf("\n%s\n", color("ALB Target Group Health Checks:", ColorBlue))
+	svcOut, err := config.ECSClient.DescribeServices(ctx, &ecs.DescribeServicesInput{Cluster: &clusterName, Services: []string{service.Name}})
+	if err != nil || len(svcOut.Services) == 0 || len(svcOut.Services[0].LoadBalancers) == 0 || svcOut.Services[0].LoadBalancers[0].TargetGroupArn == nil {
+		fmt.Printf("No ALB/TargetGroup configuration found for service.\n")
+		return
+	}
+	tgArn := *svcOut.Services[0].LoadBalancers[0].TargetGroupArn
+	tgOut, err := config.ELBv2Client.DescribeTargetGroups(ctx, &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{tgArn}})
+	if err != nil || len(tgOut.TargetGroups) == 0 {
+		fmt.Printf("Unable to read Target Group details.\n")
+		return
+	}
+	tg := tgOut.TargetGroups[0]
+	proto := string(tg.HealthCheckProtocol)
+	path := ""
+	if tg.HealthCheckPath != nil {
+		path = *tg.HealthCheckPath
+	}
+	port := ""
+	if tg.HealthCheckPort != nil {
+		port = *tg.HealthCheckPort
+	}
+	interval := int32(0)
+	timeout := int32(0)
+	healthy := int32(0)
+	unhealthy := int32(0)
+	if tg.HealthCheckIntervalSeconds != nil {
+		interval = *tg.HealthCheckIntervalSeconds
+	}
+	if tg.HealthCheckTimeoutSeconds != nil {
+		timeout = *tg.HealthCheckTimeoutSeconds
+	}
+	if tg.HealthyThresholdCount != nil {
+		healthy = *tg.HealthyThresholdCount
+	}
+	if tg.UnhealthyThresholdCount != nil {
+		unhealthy = *tg.UnhealthyThresholdCount
+	}
+	matcher := ""
+	if tg.Matcher != nil && tg.Matcher.HttpCode != nil {
+		matcher = *tg.Matcher.HttpCode
+	}
+	typical := unhealthy * interval
+	worst := unhealthy * (interval + timeout)
+	fmt.Printf("Protocol: %s  Port: %s  Path: %s  Interval: %s  Timeout: %s  Thresholds: healthy=%d unhealthy=%d  Matcher: %s\n",
+		proto, port, path, secFmt(interval), secFmt(timeout), healthy, unhealthy, matcher)
+	fmt.Printf("Approx time until target marked UNHEALTHY: typical %s, worst-case %s (subject to network reachability)\n", secFmt(typical), secFmt(worst))
 }
 
 // selectCluster displays clusters and allows user to select one.
@@ -595,20 +1106,40 @@ func selectService(services []*ServiceInfo) *ServiceInfo {
 	return services[inputInt-1]
 }
 
+type Action struct {
+	PrimaryShortcut string
+	Shortcuts       []string
+	Description     string
+}
+
 // selectAction displays available actions and allows user to select one.
 func selectAction() string {
+	// Define actions with canonical keys in PrimaryShortcut
+	actions := []Action{
+		{PrimaryShortcut: "capacity", Shortcuts: []string{"cap"}, Description: "[Cap]acity - Update service capacity (min, desired, max)"},
+		{PrimaryShortcut: "check", Shortcuts: []string{"c", "chk"}, Description: "[C]heck configuration"},
+		{PrimaryShortcut: "connect", Shortcuts: []string{"e", "x", "exec", "conn", "connect"}, Description: "[E]xec - Establish terminal session to container"},
+		{PrimaryShortcut: "force-update", Shortcuts: []string{"f", "force"}, Description: "[F]orce update service"},
+		{PrimaryShortcut: "security-groups", Shortcuts: []string{"sg", "security", "secgroups"}, Description: "[Sg] Security groups (ALB and Task)"},
+		{PrimaryShortcut: "healthchecks", Shortcuts: []string{"h", "hc", "health", "healthchecks", "health-checks"}, Description: "[H]ealth checks (task defs and ALB)"},
+		{PrimaryShortcut: "image", Shortcuts: []string{"i", "img", "image"}, Description: "[I]mage - Update container image version"},
+		{PrimaryShortcut: "logs", Shortcuts: []string{"l", "log", "logs"}, Description: "[L]ogs - Stream service logs"},
+		{PrimaryShortcut: "service-config", Shortcuts: []string{"s", "svc", "service"}, Description: "[S]ervice configuration"},
+		{PrimaryShortcut: "task-defs", Shortcuts: []string{"t", "td", "task", "taskdefs", "task-defs", "task-definition"}, Description: "[T]ask definition history (latest 10)"},
+	}
+
+	// Sort actions alphabetically by Description
+	sorted := make([]Action, len(actions))
+	copy(sorted, actions)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Description < sorted[j].Description })
+
 	fmt.Printf("\n%s\n", color("Available Actions:", ColorBlue))
-	fmt.Printf("  1. [I]mage - Update container image version\n")
-	fmt.Printf("  2. [Cap]acity - Update service capacity (min, desired, max)\n")
-	fmt.Printf("  3. [L]ogs - Stream service logs\n")
-	fmt.Printf("  4. [Conn]/E[x]ec - Connect to container\n")
-	fmt.Printf("  5. [F]orce update service\n")
-	fmt.Printf("  6. [C]heck configuration\n")
-	fmt.Printf("  7. [Svc] Service configuration (describe service)\n")
-	fmt.Printf("  8. [Td]/[Task] Task definition history (latest 10)\n")
+	for idx, a := range sorted {
+		fmt.Printf("%3d. %s\n", idx+1, a.Description)
+	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select action (1-8 or shortcut). Blank, or invalid input will exit: ", ColorYellow))
+	fmt.Printf("%s", color("Select action (number or shortcut). Blank, or invalid input will exit: ", ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -618,29 +1149,31 @@ func selectAction() string {
 		fmt.Println("Exiting")
 		os.Exit(0)
 	}
-	// Map shortcuts and numbers
-	switch input {
-	case "1", "i", "img", "image":
-		return "image"
-	case "2", "cap", "capacity":
-		return "capacity"
-	case "3", "l", "log", "logs":
-		return "logs"
-	case "4", "x", "exec", "conn", "connect":
-		return "connect"
-	case "5", "f", "force", "force-update":
-		return "force-update"
-	case "6", "c", "chk", "check":
-		return "check"
-	case "7", "svc", "service", "service-config":
-		return "service-config"
-	case "8", "td", "task", "taskdefs", "task-defs", "task-definition":
-		return "task-defs"
-	default:
+
+	// If numeric, map to sorted index
+	if n, err := strconv.Atoi(input); err == nil {
+		if n >= 1 && n <= len(sorted) {
+			return sorted[n-1].PrimaryShortcut
+		}
 		fmt.Println("Invalid selection. Exiting")
 		os.Exit(0)
-		return ""
 	}
+
+	// Otherwise, match by shortcut across all actions
+	for _, a := range actions {
+		if input == a.PrimaryShortcut {
+			return a.PrimaryShortcut
+		}
+		for _, s := range a.Shortcuts {
+			if input == s {
+				return a.PrimaryShortcut
+			}
+		}
+	}
+
+	fmt.Println("Invalid selection. Exiting")
+	os.Exit(0)
+	return ""
 }
 
 // resolveVersion returns the version string. If ldflags-injected version is empty,
@@ -670,11 +1203,6 @@ func boolPtr(v bool) *bool {
 
 // int32Ptr returns a pointer to an int32 value
 func int32Ptr(v int32) *int32 {
-	return &v
-}
-
-// int64Ptr returns a pointer to an int64 value
-func int64Ptr(v int64) *int64 {
 	return &v
 }
 
@@ -724,6 +1252,15 @@ func runRepeatLastAction(ctx context.Context, config *Config, last *LastState) e
 	case "task-defs":
 		fmt.Printf("%s Repeating: task definition history for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
 		return showTaskDefinitionHistory(ctx, config, *tdArn)
+	case "healthchecks":
+		fmt.Printf("%s Repeating: health checks for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		// Reuse current taskDef for repeat
+		showHealthChecks(ctx, config, last.ClusterName, selectedService, taskDef)
+		return nil
+	case "security-groups":
+		fmt.Printf("%s Repeating: security groups for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		showSecurityGroups(ctx, config, last.ClusterName, last.ServiceName)
+		return nil
 	default:
 		return fmt.Errorf("unknown stored action: %s", last.Action)
 	}

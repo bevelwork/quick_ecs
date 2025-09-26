@@ -175,7 +175,7 @@ func selectContainer(containers []*ContainerInfo) *ContainerInfo {
 // executeECSExec runs the ECS Exec command
 func executeECSExec(ctx context.Context, config *Config, clusterName, serviceName, taskARN, containerName string) error {
 	// Try ECS Exec first
-	err := tryECSExec(ctx, config, clusterName, taskARN, containerName)
+	err := tryECSExec(config, clusterName, taskARN, containerName)
 	if err != nil {
 		// Check if it's the "ECS Exec is not enabled" error
 		if strings.Contains(err.Error(), "ECS Exec is not enabled for cluster") {
@@ -200,14 +200,18 @@ func executeECSExec(ctx context.Context, config *Config, clusterName, serviceNam
 				fmt.Printf("%s", color("Retrying connection...\n", ColorCyan))
 
 				// Retry the connection
-				err = tryECSExec(ctx, config, clusterName, taskARN, containerName)
+				err = tryECSExec(config, clusterName, taskARN, containerName)
 				if err != nil {
+					fmt.Printf("%s Verify ECS Exec setup and networking prerequisites if the retry failed. Setup: %s  |  Troubleshooting: %s\n", color("Hint:", ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
 					return fmt.Errorf("ECS Exec connection failed after enabling: %v", err)
 				}
 			} else {
+				fmt.Printf("%s For setup instructions see %s and for troubleshooting see %s\n", color("Hint:", ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
 				return fmt.Errorf("ECS Exec is not enabled and user declined to enable it")
 			}
 		} else {
+			fmt.Printf("%s ECS Exec failed: %v\n", color("Error:", ColorRed), err)
+			fmt.Printf("%s Verify the ECS Exec prerequisites and IAM permissions. Setup: %s  |  Troubleshooting: %s\n", color("Hint:", ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
 			return err
 		}
 	}
@@ -216,7 +220,7 @@ func executeECSExec(ctx context.Context, config *Config, clusterName, serviceNam
 }
 
 // tryECSExec attempts to run ECS Exec
-func tryECSExec(ctx context.Context, config *Config, clusterName, taskARN, containerName string) error {
+func tryECSExec(config *Config, clusterName, taskARN, containerName string) error {
 	// Build the ECS Exec command
 	cmd := exec.Command("aws", "ecs", "execute-command",
 		"--region", config.Region,

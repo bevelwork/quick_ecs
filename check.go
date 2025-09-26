@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -70,12 +71,12 @@ func runConfigurationChecks(ctx context.Context, config *Config, clusterName str
 
 	// Check 5: Container image pull permissions
 	fmt.Printf("🔍 Checking container image access...\n")
-	imageIssues := checkContainerImageAccess(ctx, config, taskDef)
+	imageIssues := checkContainerImageAccess(taskDef)
 	issues = append(issues, imageIssues...)
 
 	// Check 6: SSM parameter and KMS permissions for secrets
 	fmt.Printf("🔍 Checking secrets configuration...\n")
-	secretsIssues, secretsWarnings := checkSecretsConfiguration(ctx, config, taskDef)
+	secretsIssues, secretsWarnings := checkSecretsConfiguration(taskDef)
 	issues = append(issues, secretsIssues...)
 	warnings = append(warnings, secretsWarnings...)
 
@@ -87,7 +88,7 @@ func runConfigurationChecks(ctx context.Context, config *Config, clusterName str
 
 	// Check 8: Additional common issues
 	fmt.Printf("🔍 Checking additional configuration...\n")
-	additionalIssues, additionalWarnings := checkAdditionalConfiguration(ctx, config, clusterName, service.Name, taskDef)
+	additionalIssues, additionalWarnings := checkAdditionalConfiguration(taskDef)
 	issues = append(issues, additionalIssues...)
 	warnings = append(warnings, additionalWarnings...)
 
@@ -225,11 +226,9 @@ func validateExecutionRole(ctx context.Context, config *Config, roleName string,
 
 	hasRequiredPolicy := false
 	for _, policy := range attachedPolicies.AttachedPolicies {
-		for _, required := range requiredPolicies {
-			if *policy.PolicyArn == required {
-				hasRequiredPolicy = true
-				break
-			}
+		if slices.Contains(requiredPolicies, *policy.PolicyArn) {
+			hasRequiredPolicy = true
+			break
 		}
 	}
 
@@ -300,15 +299,7 @@ func checkSecurityGroups(ctx context.Context, config *Config, clusterName, servi
 
 	// Check if we're running on Fargate or EC2
 	if taskDef.RequiresCompatibilities != nil {
-		isFargate := false
-		for _, compatibility := range taskDef.RequiresCompatibilities {
-			if compatibility == types.CompatibilityFargate {
-				isFargate = true
-				break
-			}
-		}
-
-		if isFargate {
+		if slices.Contains(taskDef.RequiresCompatibilities, types.CompatibilityFargate) {
 			fmt.Printf("  ℹ️  Fargate launch type - security groups managed by service network configuration\n")
 			warnings = append(warnings, "Fargate security group validation requires service network configuration - check manually")
 			fmt.Printf("  ⚠️  %s\n", color("Manual security group check required for Fargate", ColorYellow))
@@ -734,7 +725,7 @@ func checkTaskFailures(ctx context.Context, config *Config, clusterName, service
 }
 
 // checkContainerImageAccess validates container image pull permissions
-func checkContainerImageAccess(ctx context.Context, config *Config, taskDef *types.TaskDefinition) []string {
+func checkContainerImageAccess(taskDef *types.TaskDefinition) []string {
 	var issues []string
 
 	for _, container := range taskDef.ContainerDefinitions {
@@ -771,7 +762,7 @@ func checkContainerImageAccess(ctx context.Context, config *Config, taskDef *typ
 }
 
 // checkSecretsConfiguration validates SSM parameter and KMS permissions for secrets
-func checkSecretsConfiguration(ctx context.Context, config *Config, taskDef *types.TaskDefinition) ([]string, []string) {
+func checkSecretsConfiguration(taskDef *types.TaskDefinition) ([]string, []string) {
 	var issues []string
 	var warnings []string
 
@@ -804,7 +795,7 @@ func checkSecretsConfiguration(ctx context.Context, config *Config, taskDef *typ
 }
 
 // checkAdditionalConfiguration checks for additional common ECS issues
-func checkAdditionalConfiguration(ctx context.Context, config *Config, clusterName, serviceName string, taskDef *types.TaskDefinition) ([]string, []string) {
+func checkAdditionalConfiguration(taskDef *types.TaskDefinition) ([]string, []string) {
 	var issues []string
 	var warnings []string
 
