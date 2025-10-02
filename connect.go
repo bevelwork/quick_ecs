@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 )
 
 // ContainerInfo represents a container with task information
@@ -31,6 +32,57 @@ func connectAction(ctx context.Context, config *Config, selectedCluster *Cluster
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// enableExecAction enables ECS Exec for the selected service and validates task role permissions
+func enableExecAction(ctx context.Context, config *Config, selectedCluster *ClusterInfo, selectedService *ServiceInfo, taskDef *types.TaskDefinition) {
+	fmt.Printf("Enabling ECS Exec for service: %s\n", colorBold(selectedService.Name, ColorCyan))
+
+	// Enable on the service
+	if err := enableECSExecForService(ctx, config, selectedCluster.Name, selectedService.Name); err != nil {
+		log.Fatal(fmt.Errorf("failed to enable ECS Exec: %v", err))
+		return
+	}
+	fmt.Printf("%s Enabled ECS Exec on service\n", color("Success:", ColorGreen))
+
+	// Validate task role has SSM permissions typically required by ECS Exec
+	// According to AWS docs, the task or instance role must allow ssmmessages channels.
+	// Here we check the task role, if present.
+	if taskDef.TaskRoleArn != nil {
+		roleName := extractRoleName(*taskDef.TaskRoleArn)
+		hasSSMPolicy, err := roleHasAnyPolicyArn(ctx, config, roleName, []string{
+			"arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+			"arn:aws:iam::aws:policy/AmazonSSMFullAccess",
+		})
+		if err != nil {
+			fmt.Printf("%s Could not verify task role policies: %v\n", color("Warning:", ColorYellow), err)
+		} else if !hasSSMPolicy {
+			fmt.Printf("%s Task role %s may be missing SSM permissions required for exec. Ensure it allows: ssmmessages:CreateControlChannel, ssmmessages:CreateDataChannel, ssmmessages:OpenControlChannel, ssmmessages:OpenDataChannel.\n", color("Warning:", ColorYellow), roleName)
+		} else {
+			fmt.Printf("%s Task role appears to include SSM permissions (policy attached).\n", color("Info:", ColorCyan))
+		}
+	} else {
+		fmt.Printf("%s No task role set. Ensure underlying node role (EC2) or execution environment includes SSM permissions for exec.\n", color("Warning:", ColorYellow))
+	}
+}
+
+// roleHasAnyPolicyArn checks whether the given role has any of the specified policy ARNs attached
+func roleHasAnyPolicyArn(ctx context.Context, config *Config, roleName string, candidatePolicyArns []string) (bool, error) {
+	attachedPolicies, err := config.IAMClient.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{RoleName: &roleName})
+	if err != nil {
+		return false, err
+	}
+	for _, p := range attachedPolicies.AttachedPolicies {
+		if p.PolicyArn == nil {
+			continue
+		}
+		for _, candidate := range candidatePolicyArns {
+			if *p.PolicyArn == candidate {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // connectToContainer establishes an ECS Exec session to a container
@@ -149,15 +201,15 @@ func selectContainer(containers []*ContainerInfo) *ContainerInfo {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select container. Blank, or non-numeric input will exit: ", ColorYellow))
+	fmt.Printf("%s", color("Select container. Press Enter for first option, or non-numeric input will exit: ", ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
 	}
 	input = strings.TrimSpace(input)
 	if input == "" {
-		fmt.Println("Exiting")
-		os.Exit(0)
+		// Default to first container
+		return containers[0]
 	}
 	inputInt, err := strconv.Atoi(input)
 	if err != nil {

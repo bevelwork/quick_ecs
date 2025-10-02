@@ -168,6 +168,9 @@ func main() {
 	case "image":
 		updateImageAction(ctx, config, selectedCluster, selectedService, taskDef)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "image"})
+	case "enable-exec":
+		enableExecAction(ctx, config, selectedCluster, selectedService, taskDef)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "enable-exec"})
 	case "capacity":
 		updateCapacityAction(ctx, config, selectedCluster, selectedService)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "capacity"})
@@ -500,13 +503,21 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 		return err
 	}
 
-	// Pretty-print to terminal
+	// Pretty-print to terminal with camelCase conversion
 	pretty, err := json.MarshalIndent(tdOut.TaskDefinition, "", "  ")
 	if err != nil {
 		fmt.Printf("%s Failed to marshal task definition: %v\n", color("Error:", ColorRed), err)
 		return err
 	}
-	fmt.Printf("\n%s\n%s\n", color("Selected Task Definition:", ColorBlue), string(pretty))
+
+	// Convert capitalized JSON properties to camelCase
+	camelCaseJSON, err := convertJSONToCamelCase(pretty)
+	if err != nil {
+		fmt.Printf("%s Failed to convert JSON to camelCase: %v\n", color("Error:", ColorRed), err)
+		return err
+	}
+
+	fmt.Printf("\n%s\n%s\n", color("Selected Task Definition:", ColorBlue), string(camelCaseJSON))
 
 	// Build filename: <definition-arn>.<version-number>.json (sanitize ARN for filesystem safety)
 	rev := ""
@@ -515,7 +526,7 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 	}
 	safeArn := strings.NewReplacer("/", "_", ":", "_", " ", "_").Replace(chosenArn)
 	filename := fmt.Sprintf("%s.%s.json", safeArn, rev)
-	if err := os.WriteFile(filename, pretty, 0600); err != nil {
+	if err := os.WriteFile(filename, camelCaseJSON, 0600); err != nil {
 		fmt.Printf("%s Failed to write file %s: %v\n", color("Error:", ColorRed), filename, err)
 		return err
 	}
@@ -620,15 +631,15 @@ func selectService(services []*ServiceInfo) *ServiceInfo {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select service. Blank, or non-numeric input will exit: ", ColorYellow))
+	fmt.Printf("%s", color("Select service. Press Enter for first option, or non-numeric input will exit: ", ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
 	}
 	input = strings.TrimSpace(input)
 	if input == "" {
-		fmt.Println("Exiting")
-		os.Exit(0)
+		// Default to first service
+		return services[0]
 	}
 	inputInt, err := strconv.Atoi(input)
 	if err != nil {
@@ -653,9 +664,9 @@ type Action struct {
 func selectAction() string {
 	// Define actions with canonical keys in PrimaryShortcut
 	actions := []Action{
+		{PrimaryShortcut: "connect", Shortcuts: []string{"e", "x", "exec", "conn", "connect"}, Description: "[E]xec - Establish terminal session to container"},
 		{PrimaryShortcut: "capacity", Shortcuts: []string{"cap"}, Description: "[Cap]acity - Update service capacity (min, desired, max)"},
 		{PrimaryShortcut: "check", Shortcuts: []string{"c", "chk"}, Description: "[C]heck configuration"},
-		{PrimaryShortcut: "connect", Shortcuts: []string{"e", "x", "exec", "conn", "connect"}, Description: "[E]xec - Establish terminal session to container"},
 		{PrimaryShortcut: "force-update", Shortcuts: []string{"f", "force"}, Description: "[F]orce update service"},
 		{PrimaryShortcut: "security-groups", Shortcuts: []string{"sg", "security", "secgroups"}, Description: "[Sg] Security groups (ALB and Task)"},
 		{PrimaryShortcut: "healthchecks", Shortcuts: []string{"h", "hc", "health", "healthchecks", "health-checks"}, Description: "[H]ealth checks (task defs and ALB)"},
@@ -663,12 +674,11 @@ func selectAction() string {
 		{PrimaryShortcut: "logs", Shortcuts: []string{"l", "log", "logs"}, Description: "[L]ogs - Stream service logs"},
 		{PrimaryShortcut: "service-config", Shortcuts: []string{"s", "svc", "service"}, Description: "[S]ervice configuration"},
 		{PrimaryShortcut: "task-defs", Shortcuts: []string{"t", "td", "task", "taskdefs", "task-defs", "task-definition"}, Description: "[T]ask definition history (latest 10)"},
+		{PrimaryShortcut: "enable-exec", Shortcuts: []string{"enable", "enable-exec", "enable-execution", "enable-execution-mode", "exec-enable"}, Description: "Enable e[X]ecution mode (ECS Exec)"},
 	}
 
-	// Sort actions alphabetically by Description
-	sorted := make([]Action, len(actions))
-	copy(sorted, actions)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Description < sorted[j].Description })
+	// Use actions in the order defined (no sorting)
+	sorted := actions
 
 	fmt.Printf("\n%s\n", color("Available Actions:", ColorBlue))
 	for idx, a := range sorted {
@@ -676,15 +686,15 @@ func selectAction() string {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select action (number or shortcut). Blank, or invalid input will exit: ", ColorYellow))
+	fmt.Printf("%s", color("Select action (number or shortcut). Press Enter for first option, or invalid input will exit: ", ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
 	}
 	input = strings.TrimSpace(strings.ToLower(input))
 	if input == "" {
-		fmt.Println("Exiting")
-		os.Exit(0)
+		// Default to first action
+		return sorted[0].PrimaryShortcut
 	}
 
 	// If numeric, map to sorted index
@@ -792,6 +802,10 @@ func runRepeatLastAction(ctx context.Context, config *Config, last *LastState) e
 		// Reuse current taskDef for repeat
 		showHealthChecks(ctx, config, last.ClusterName, selectedService, taskDef)
 		return nil
+	case "enable-exec":
+		fmt.Printf("%s Repeating: enable exec for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		enableExecAction(ctx, config, selectedCluster, selectedService, taskDef)
+		return nil
 	case "security-groups":
 		fmt.Printf("%s Repeating: security groups for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
 		showSecurityGroups(ctx, config, last.ClusterName, last.ServiceName)
@@ -799,4 +813,90 @@ func runRepeatLastAction(ctx context.Context, config *Config, last *LastState) e
 	default:
 		return fmt.Errorf("unknown stored action: %s", last.Action)
 	}
+}
+
+// convertJSONToCamelCase converts capitalized JSON property names to camelCase
+func convertJSONToCamelCase(jsonData []byte) ([]byte, error) {
+	var data interface{}
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return nil, err
+	}
+
+	converted := convertToCamelCase(data)
+	return json.MarshalIndent(converted, "", "  ")
+}
+
+// convertToCamelCase recursively converts map keys from PascalCase to camelCase
+func convertToCamelCase(data interface{}) interface{} {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{})
+		for key, value := range v {
+			camelKey := toCamelCase(key)
+			result[camelKey] = convertToCamelCase(value)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			result[i] = convertToCamelCase(item)
+		}
+		return result
+	default:
+		return v
+	}
+}
+
+// toCamelCase converts PascalCase to camelCase
+func toCamelCase(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+
+	// Handle special cases that should remain as-is
+	specialCases := map[string]string{
+		"ARN":   "arn",
+		"ARNs":  "arns",
+		"CPU":   "cpu",
+		"CPUs":  "cpus",
+		"DNS":   "dns",
+		"IP":    "ip",
+		"IPs":   "ips",
+		"ID":    "id",
+		"IDs":   "ids",
+		"URL":   "url",
+		"URLs":  "urls",
+		"VPC":   "vpc",
+		"VPCs":  "vpcs",
+		"ALB":   "alb",
+		"ALBs":  "albs",
+		"EC2":   "ec2",
+		"ECS":   "ecs",
+		"SSM":   "ssm",
+		"KMS":   "kms",
+		"IAM":   "iam",
+		"API":   "api",
+		"APIs":  "apis",
+		"JSON":  "json",
+		"XML":   "xml",
+		"HTTP":  "http",
+		"HTTPS": "https",
+		"TCP":   "tcp",
+		"UDP":   "udp",
+		"SSL":   "ssl",
+		"TLS":   "tls",
+		"UUID":  "uuid",
+		"UUIDs": "uuids",
+	}
+
+	if special, exists := specialCases[s]; exists {
+		return special
+	}
+
+	// Convert PascalCase to camelCase
+	runes := []rune(s)
+	if len(runes) > 0 {
+		runes[0] = runes[0] + 32 // Convert first character to lowercase
+	}
+	return string(runes)
 }

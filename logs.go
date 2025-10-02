@@ -151,41 +151,44 @@ func streamLogs(ctx context.Context, config *Config, logGroupName string, logStr
 
 	fmt.Printf("%s Interactive log streaming from %s:\n", color("====", ColorBlue), logStreams[0])
 	fmt.Println(strings.Repeat("-", 60))
-	fmt.Printf("%s Press Enter to check for new logs, Ctrl+C to exit\n", color("Tip:", ColorYellow))
+	fmt.Printf("%s Press Enter to check for new logs, auto-refresh every 3s, Ctrl+C to exit\n", color("Tip:", ColorYellow))
 	fmt.Println(strings.Repeat("-", 60))
 
 	// Initial log fetch
-	err := fetchAndDisplayLogs(ctx, config, logGroupName, logStreams[0], &lastTimestamp)
-	if err != nil {
+	if err := fetchAndDisplayLogs(ctx, config, logGroupName, logStreams[0], &lastTimestamp, false); err != nil {
 		return err
 	}
 	// Show the action prompt after initial log fetch
-	fmt.Printf("%s Press Enter to check for new logs, Ctrl+C to exit: ", color("Action:", ColorCyan))
+	fmt.Printf("%s Press Enter to check for new logs, auto-refresh every 3s, Ctrl+C to exit: ", color("Action:", ColorCyan))
+
+	// Auto-refresh ticker
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-sigChan:
 			fmt.Printf("\n%s Log streaming stopped by user.\n", color("Info:", ColorGreen))
 			return nil
+		case <-ticker.C:
+			// Auto refresh (quiet on no-new-logs)
+			fmt.Print(".")
+			if err := fetchAndDisplayLogs(ctx, config, logGroupName, logStreams[0], &lastTimestamp, true); err != nil {
+				return err
+			}
 		case input := <-inputChan:
 			if input == "" {
 				// User pressed Enter, fetch new logs
-				fmt.Printf("⠋ Checking for new logs...\r")
-				err := fetchAndDisplayLogs(ctx, config, logGroupName, logStreams[0], &lastTimestamp)
-				if err != nil {
-					fmt.Printf("\r\033[K")
+				if err := fetchAndDisplayLogs(ctx, config, logGroupName, logStreams[0], &lastTimestamp, false); err != nil {
 					return err
 				}
-				fmt.Printf("\r\033[K") // Clear the progress line
-				// Show the action prompt after each log check
-				fmt.Printf("%s Press Enter to check for new logs, Ctrl+C to exit: ", color("Action:", ColorCyan))
 			}
 		}
 	}
 }
 
 // fetchAndDisplayLogs fetches and displays new log events
-func fetchAndDisplayLogs(ctx context.Context, config *Config, logGroupName, logStreamName string, lastTimestamp *int64) error {
+func fetchAndDisplayLogs(ctx context.Context, config *Config, logGroupName, logStreamName string, lastTimestamp *int64, quiet bool) error {
 	// Get log events starting from the last timestamp we saw
 	input := &cloudwatchlogs.GetLogEventsInput{
 		LogGroupName:  &logGroupName,
@@ -210,7 +213,9 @@ func fetchAndDisplayLogs(ctx context.Context, config *Config, logGroupName, logS
 	}
 
 	if newLogsCount == 0 {
-		fmt.Printf("%s No new logs since last check.\n", color("Info:", ColorYellow))
+		if !quiet {
+			fmt.Printf("%s No new logs since last check.\n", color("Info:", ColorYellow))
+		}
 	} else {
 		fmt.Printf("%s %d new log entries displayed.\n", color("Info:", ColorGreen), newLogsCount)
 	}
