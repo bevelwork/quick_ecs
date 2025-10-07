@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // ContainerInfo represents a container with task information
@@ -26,7 +27,7 @@ type ContainerInfo struct {
 
 // connectAction handles the ECS exec connection action
 func connectAction(ctx context.Context, config *Config, selectedCluster *ClusterInfo, selectedService *ServiceInfo, taskDef *types.TaskDefinition) {
-	fmt.Printf("Connecting to container for service: %s\n", colorBold(selectedService.Name, ColorCyan))
+	fmt.Printf("Connecting to container for service: %s\n", qc.ColorizeBold(selectedService.Name, qc.ColorCyan))
 
 	err := connectToContainer(ctx, config, selectedCluster.Name, selectedService.Name, taskDef)
 	if err != nil {
@@ -36,14 +37,14 @@ func connectAction(ctx context.Context, config *Config, selectedCluster *Cluster
 
 // enableExecAction enables ECS Exec for the selected service and validates task role permissions
 func enableExecAction(ctx context.Context, config *Config, selectedCluster *ClusterInfo, selectedService *ServiceInfo, taskDef *types.TaskDefinition) {
-	fmt.Printf("Enabling ECS Exec for service: %s\n", colorBold(selectedService.Name, ColorCyan))
+	fmt.Printf("Enabling ECS Exec for service: %s\n", qc.ColorizeBold(selectedService.Name, qc.ColorCyan))
 
 	// Enable on the service
 	if err := enableECSExecForService(ctx, config, selectedCluster.Name, selectedService.Name); err != nil {
 		log.Fatal(fmt.Errorf("failed to enable ECS Exec: %v", err))
 		return
 	}
-	fmt.Printf("%s Enabled ECS Exec on service\n", color("Success:", ColorGreen))
+	fmt.Printf("%s Enabled ECS Exec on service\n", qc.Colorize("Success:", qc.ColorGreen))
 
 	// Validate task role has SSM permissions typically required by ECS Exec
 	// According to AWS docs, the task or instance role must allow ssmmessages channels.
@@ -55,14 +56,14 @@ func enableExecAction(ctx context.Context, config *Config, selectedCluster *Clus
 			"arn:aws:iam::aws:policy/AmazonSSMFullAccess",
 		})
 		if err != nil {
-			fmt.Printf("%s Could not verify task role policies: %v\n", color("Warning:", ColorYellow), err)
+			fmt.Printf("%s Could not verify task role policies: %v\n", qc.Colorize("Warning:", qc.ColorYellow), err)
 		} else if !hasSSMPolicy {
-			fmt.Printf("%s Task role %s may be missing SSM permissions required for exec. Ensure it allows: ssmmessages:CreateControlChannel, ssmmessages:CreateDataChannel, ssmmessages:OpenControlChannel, ssmmessages:OpenDataChannel.\n", color("Warning:", ColorYellow), roleName)
+			fmt.Printf("%s Task role %s may be missing SSM permissions required for exec. Ensure it allows: ssmmessages:CreateControlChannel, ssmmessages:CreateDataChannel, ssmmessages:OpenControlChannel, ssmmessages:OpenDataChannel.\n", qc.Colorize("Warning:", qc.ColorYellow), roleName)
 		} else {
-			fmt.Printf("%s Task role appears to include SSM permissions (policy attached).\n", color("Info:", ColorCyan))
+			fmt.Printf("%s Task role appears to include SSM permissions (policy attached).\n", qc.Colorize("Info:", qc.ColorCyan))
 		}
 	} else {
-		fmt.Printf("%s No task role set. Ensure underlying node role (EC2) or execution environment includes SSM permissions for exec.\n", color("Warning:", ColorYellow))
+		fmt.Printf("%s No task role set. Ensure underlying node role (EC2) or execution environment includes SSM permissions for exec.\n", qc.Colorize("Warning:", qc.ColorYellow))
 	}
 }
 
@@ -193,15 +194,15 @@ func extractTaskID(taskARN string) string {
 
 // selectContainer allows the user to select a container
 func selectContainer(containers []*ContainerInfo) *ContainerInfo {
-	fmt.Printf("\n%s\n", color("Available Containers:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Available Containers:", qc.ColorBlue))
 
 	for i, container := range containers {
 		displayName := fmt.Sprintf("%s-%s", container.Name, container.LastThree)
-		fmt.Printf("  %d. %s (Task: %s)\n", i+1, colorBold(displayName, ColorCyan), container.TaskID)
+		fmt.Printf("  %d. %s (Task: %s)\n", i+1, qc.ColorizeBold(displayName, qc.ColorCyan), container.TaskID)
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select container. Press Enter for first option, or non-numeric input will exit: ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Select container. Press Enter for first option, or non-numeric input will exit: ", qc.ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -231,8 +232,8 @@ func executeECSExec(ctx context.Context, config *Config, clusterName, serviceNam
 	if err != nil {
 		// Check if it's the "ECS Exec is not enabled" error
 		if strings.Contains(err.Error(), "ECS Exec is not enabled for cluster") {
-			fmt.Printf("%s ECS Exec is not enabled for this cluster.\n", color("Warning:", ColorYellow))
-			fmt.Printf("%s", color("Would you like to enable ECS Exec for this service? (y/N): ", ColorYellow))
+			fmt.Printf("%s ECS Exec is not enabled for this cluster.\n", qc.Colorize("Warning:", qc.ColorYellow))
+			fmt.Printf("%s", qc.Colorize("Would you like to enable ECS Exec for this service? (y/N): ", qc.ColorYellow))
 
 			reader := bufio.NewReader(os.Stdin)
 			confirmInput, err := reader.ReadString('\n')
@@ -248,22 +249,22 @@ func executeECSExec(ctx context.Context, config *Config, clusterName, serviceNam
 					return fmt.Errorf("failed to enable ECS Exec: %v", err)
 				}
 
-				fmt.Printf("%s ECS Exec enabled successfully!\n", color("Success:", ColorGreen))
-				fmt.Printf("%s", color("Retrying connection...\n", ColorCyan))
+				fmt.Printf("%s ECS Exec enabled successfully!\n", qc.Colorize("Success:", qc.ColorGreen))
+				fmt.Printf("%s", qc.Colorize("Retrying connection...\n", qc.ColorCyan))
 
 				// Retry the connection
 				err = tryECSExec(config, clusterName, taskARN, containerName)
 				if err != nil {
-					fmt.Printf("%s Verify ECS Exec setup and networking prerequisites if the retry failed. Setup: %s  |  Troubleshooting: %s\n", color("Hint:", ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
+					fmt.Printf("%s Verify ECS Exec setup and networking prerequisites if the retry failed. Setup: %s  |  Troubleshooting: %s\n", qc.Colorize("Hint:", qc.ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
 					return fmt.Errorf("ECS Exec connection failed after enabling: %v", err)
 				}
 			} else {
-				fmt.Printf("%s For setup instructions see %s and for troubleshooting see %s\n", color("Hint:", ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
+				fmt.Printf("%s For setup instructions see %s and for troubleshooting see %s\n", qc.Colorize("Hint:", qc.ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
 				return fmt.Errorf("ECS Exec is not enabled and user declined to enable it")
 			}
 		} else {
-			fmt.Printf("%s ECS Exec failed: %v\n", color("Error:", ColorRed), err)
-			fmt.Printf("%s Verify the ECS Exec prerequisites and IAM permissions. Setup: %s  |  Troubleshooting: %s\n", color("Hint:", ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
+			fmt.Printf("%s ECS Exec failed: %v\n", qc.Colorize("Error:", qc.ColorRed), err)
+			fmt.Printf("%s Verify the ECS Exec prerequisites and IAM permissions. Setup: %s  |  Troubleshooting: %s\n", qc.Colorize("Hint:", qc.ColorYellow), "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html")
 			return err
 		}
 	}

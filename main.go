@@ -25,6 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	qc "github.com/bevelwork/quick_color"
 	versionpkg "github.com/bevelwork/quick_ecs/version"
 )
 
@@ -110,10 +111,7 @@ func main() {
 	}
 
 	selectedCluster := selectCluster(clusters, config)
-	fmt.Printf(
-		"Selected cluster: %s\n",
-		colorBold(selectedCluster.Name, ColorGreen),
-	)
+	fmt.Printf("Selected cluster: %s\n", qc.ColorizeBold(selectedCluster.Name, qc.ColorGreen))
 
 	// Handle repeat-last sentinel
 	if selectedCluster.Name == "__REPEAT_LAST__" {
@@ -121,7 +119,7 @@ func main() {
 		if err != nil || last == nil {
 			log.Fatal("No previous state found to repeat")
 		}
-		fmt.Printf("%s Repeating last action: cluster=%s service=%s action=%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen), colorBold(last.Action, ColorYellow))
+		fmt.Printf("%s Repeating last action: cluster=%s service=%s action=%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen), qc.ColorizeBold(last.Action, qc.ColorYellow))
 		if err := runRepeatLastAction(ctx, config, last); err != nil {
 			log.Fatal(err)
 		}
@@ -138,10 +136,7 @@ func main() {
 	}
 
 	selectedService := selectService(services)
-	fmt.Printf(
-		"Selected service: %s\n",
-		colorBold(selectedService.Name, ColorGreen),
-	)
+	fmt.Printf("Selected service: %s\n", qc.ColorizeBold(selectedService.Name, qc.ColorGreen))
 
 	// Step 3: Show current service information
 	taskDef, err := showProgressWithResult("Loading task definition...", func() (*types.TaskDefinition, error) {
@@ -152,10 +147,7 @@ func main() {
 	}
 
 	containerImage := getContainerImage(taskDef)
-	fmt.Printf(
-		"Current container image: %s\n",
-		colorBold(containerImage, ColorCyan),
-	)
+	fmt.Printf("Current container image: %s\n", qc.ColorizeBold(containerImage, qc.ColorCyan))
 	fmt.Printf(
 		"Current capacity: Desired=%d, Running=%d\n",
 		selectedService.DesiredCount, selectedService.RunningCount,
@@ -349,11 +341,11 @@ func getTaskDefinition(ctx context.Context, config *Config, taskDefArn string) (
 func showServiceConfiguration(ctx context.Context, config *Config, clusterName, serviceName string) {
 	out, err := config.ECSClient.DescribeServices(ctx, &ecs.DescribeServicesInput{Cluster: &clusterName, Services: []string{serviceName}})
 	if err != nil || len(out.Services) == 0 {
-		fmt.Printf("%s Unable to describe service: %v\n", color("Error:", ColorRed), err)
+		fmt.Printf("%s Unable to describe service: %v\n", qc.Colorize("Error:", qc.ColorRed), err)
 		return
 	}
 	s := out.Services[0]
-	fmt.Printf("\n%s\n", color("Service Configuration:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Service Configuration:", qc.ColorBlue))
 	fmt.Printf("Name: %s\n", *s.ServiceName)
 	fmt.Printf("Status: %s  Running: %d  Desired: %d\n", *s.Status, s.RunningCount, s.DesiredCount)
 	if s.TaskDefinition != nil {
@@ -379,7 +371,7 @@ func showServiceConfiguration(ctx context.Context, config *Config, clusterName, 
 	}
 
 	// --- Security Group Configuration ---
-	fmt.Printf("\n%s\n", color("Security Group Configuration:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Security Group Configuration:", qc.ColorBlue))
 
 	// Step 1: Resolve ALB SGs and VPC
 	albSgIds, vpcId := resolveAlbSecurityGroups(ctx, config, s)
@@ -402,7 +394,7 @@ func showServiceConfiguration(ctx context.Context, config *Config, clusterName, 
 	}
 
 	// --- Network Info ---
-	fmt.Printf("\n%s\n", color("Network Info:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Network Info:", qc.ColorBlue))
 	// Step 3: Determine subnets from service config (awsvpc)
 	var subnets []string
 	if s.NetworkConfiguration != nil && s.NetworkConfiguration.AwsvpcConfiguration != nil {
@@ -445,7 +437,7 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 	// Fetch latest 10 ARNs for family
 	listOut, err := config.ECSClient.ListTaskDefinitions(ctx, &ecs.ListTaskDefinitionsInput{FamilyPrefix: &family, Sort: types.SortOrderDesc, MaxResults: int32Ptr(10)})
 	if err != nil {
-		fmt.Printf("%s Unable to list task definitions: %v\n", color("Error:", ColorRed), err)
+		fmt.Printf("%s Unable to list task definitions: %v\n", qc.Colorize("Error:", qc.ColorRed), err)
 		return err
 	}
 
@@ -462,17 +454,17 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 		defaultArn = latestArn
 	}
 
-	fmt.Printf("\n%s\n", color("Task Definition History (latest up to 10):", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Task Definition History (latest up to 10):", qc.ColorBlue))
 	for i, arn := range listOut.TaskDefinitionArns {
 		indicators := []string{}
 		if arn == latestArn {
-			indicators = append(indicators, color("latest", ColorGreen))
+			indicators = append(indicators, qc.Colorize("latest", qc.ColorGreen))
 		}
 		if arn == defaultArn {
-			indicators = append(indicators, color("default", ColorCyan))
+			indicators = append(indicators, qc.Colorize("default", qc.ColorCyan))
 		}
 		if arn == currentInUse {
-			indicators = append(indicators, color("in-use", ColorYellow))
+			indicators = append(indicators, qc.Colorize("in-use", qc.ColorYellow))
 		}
 		suffix := ""
 		if len(indicators) > 0 {
@@ -483,7 +475,7 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 
 	// Prompt for selection
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select a task definition to view/save (blank to exit): ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Select a task definition to view/save (blank to exit): ", qc.ColorYellow))
 	sel, _ := reader.ReadString('\n')
 	sel = strings.TrimSpace(sel)
 	if sel == "" {
@@ -499,25 +491,25 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 	// Describe selected task definition
 	tdOut, err := config.ECSClient.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{TaskDefinition: &chosenArn})
 	if err != nil || tdOut.TaskDefinition == nil {
-		fmt.Printf("%s Failed to describe task definition: %v\n", color("Error:", ColorRed), err)
+		fmt.Printf("%s Failed to describe task definition: %v\n", qc.Colorize("Error:", qc.ColorRed), err)
 		return err
 	}
 
 	// Pretty-print to terminal with camelCase conversion
 	pretty, err := json.MarshalIndent(tdOut.TaskDefinition, "", "  ")
 	if err != nil {
-		fmt.Printf("%s Failed to marshal task definition: %v\n", color("Error:", ColorRed), err)
+		fmt.Printf("%s Failed to marshal task definition: %v\n", qc.Colorize("Error:", qc.ColorRed), err)
 		return err
 	}
 
 	// Convert capitalized JSON properties to camelCase
 	camelCaseJSON, err := convertJSONToCamelCase(pretty)
 	if err != nil {
-		fmt.Printf("%s Failed to convert JSON to camelCase: %v\n", color("Error:", ColorRed), err)
+		fmt.Printf("%s Failed to convert JSON to camelCase: %v\n", qc.Colorize("Error:", qc.ColorRed), err)
 		return err
 	}
 
-	fmt.Printf("\n%s\n%s\n", color("Selected Task Definition:", ColorBlue), string(camelCaseJSON))
+	fmt.Printf("\n%s\n%s\n", qc.Colorize("Selected Task Definition:", qc.ColorBlue), string(camelCaseJSON))
 
 	// Build filename: <definition-arn>.<version-number>.json (sanitize ARN for filesystem safety)
 	rev := ""
@@ -527,21 +519,21 @@ func showTaskDefinitionHistory(ctx context.Context, config *Config, taskDefArn s
 	safeArn := strings.NewReplacer("/", "_", ":", "_", " ", "_").Replace(chosenArn)
 	filename := fmt.Sprintf("%s.%s.json", safeArn, rev)
 	if err := os.WriteFile(filename, camelCaseJSON, 0600); err != nil {
-		fmt.Printf("%s Failed to write file %s: %v\n", color("Error:", ColorRed), filename, err)
+		fmt.Printf("%s Failed to write file %s: %v\n", qc.Colorize("Error:", qc.ColorRed), filename, err)
 		return err
 	}
-	fmt.Printf("%s Saved to %s\n", color("Info:", ColorGreen), filename)
+	fmt.Printf("%s Saved to %s\n", qc.Colorize("Info:", qc.ColorGreen), filename)
 	return nil
 }
 
 // selectCluster displays clusters and allows user to select one.
 func selectCluster(clusters []*ClusterInfo, config *Config) *ClusterInfo {
-	fmt.Printf("\n%s\n", color("Available ECS Clusters:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Available ECS Clusters:", qc.ColorBlue))
 
 	// Offer 0th option if last state exists
 	last, _ := loadLastState()
 	if last != nil {
-		fmt.Printf("  0. %s %s -> %s\n", colorBold("Repeat last:", ColorCyan), color(last.ClusterName, ColorGreen), color(last.ServiceName+" ["+last.Action+"]", ColorYellow))
+		fmt.Printf("  0. %s %s -> %s\n", qc.ColorizeBold("Repeat last:", qc.ColorCyan), qc.Colorize(last.ClusterName, qc.ColorGreen), qc.Colorize(last.ServiceName+" ["+last.Action+"]", qc.ColorYellow))
 	}
 
 	longestName := 0
@@ -555,9 +547,9 @@ func selectCluster(clusters []*ClusterInfo, config *Config) *ClusterInfo {
 		// Alternate row colors for better readability
 		var rowColor string
 		if i%2 == 0 {
-			rowColor = ColorWhite
+			rowColor = qc.ColorWhite
 		} else {
-			rowColor = ColorCyan
+			rowColor = qc.ColorCyan
 		}
 
 		// Color code the status
@@ -565,14 +557,14 @@ func selectCluster(clusters []*ClusterInfo, config *Config) *ClusterInfo {
 		entry := fmt.Sprintf(
 			"%3d. %-*s %s [%s] (%d tasks, %d services)",
 			i+1, longestName, cluster.Name, sanitizeARN(cluster.ARN, config.PrivateMode),
-			color(cluster.Status, statusColor),
+			qc.Colorize(cluster.Status, statusColor),
 			cluster.RunningTasks, cluster.ActiveServices,
 		)
-		fmt.Println(color(entry, rowColor))
+		fmt.Println(qc.Colorize(entry, rowColor))
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select cluster (0 to repeat last). Blank, or non-numeric input will exit: ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Select cluster (0 to repeat last). Blank, or non-numeric input will exit: ", qc.ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -601,7 +593,7 @@ func selectCluster(clusters []*ClusterInfo, config *Config) *ClusterInfo {
 
 // selectService displays services and allows user to select one.
 func selectService(services []*ServiceInfo) *ServiceInfo {
-	fmt.Printf("\n%s\n", color("Available ECS Services:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Available ECS Services:", qc.ColorBlue))
 
 	longestName := 0
 	for _, service := range services {
@@ -614,9 +606,9 @@ func selectService(services []*ServiceInfo) *ServiceInfo {
 		// Alternate row colors for better readability
 		var rowColor string
 		if i%2 == 0 {
-			rowColor = ColorWhite
+			rowColor = qc.ColorWhite
 		} else {
-			rowColor = ColorCyan
+			rowColor = qc.ColorCyan
 		}
 
 		// Color code the status
@@ -624,14 +616,14 @@ func selectService(services []*ServiceInfo) *ServiceInfo {
 		entry := fmt.Sprintf(
 			"%3d. %-*s [%s] (%d/%d running)",
 			i+1, longestName, service.Name,
-			color(service.Status, statusColor),
+			qc.Colorize(service.Status, statusColor),
 			service.RunningCount, service.DesiredCount,
 		)
-		fmt.Println(color(entry, rowColor))
+		fmt.Println(qc.Colorize(entry, rowColor))
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select service. Press Enter for first option, or non-numeric input will exit: ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Select service. Press Enter for first option, or non-numeric input will exit: ", qc.ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -680,13 +672,13 @@ func selectAction() string {
 	// Use actions in the order defined (no sorting)
 	sorted := actions
 
-	fmt.Printf("\n%s\n", color("Available Actions:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Available Actions:", qc.ColorBlue))
 	for idx, a := range sorted {
 		fmt.Printf("%3d. %s\n", idx+1, a.Description)
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s", color("Select action (number or shortcut). Press Enter for first option, or invalid input will exit: ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Select action (number or shortcut). Press Enter for first option, or invalid input will exit: ", qc.ColorYellow))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -771,43 +763,43 @@ func runRepeatLastAction(ctx context.Context, config *Config, last *LastState) e
 
 	switch last.Action {
 	case "logs":
-		fmt.Printf("%s Repeating: stream logs for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: stream logs for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return streamServiceLogs(ctx, config, last.ClusterName, last.ServiceName, taskDef)
 	case "connect":
-		fmt.Printf("%s Repeating: connect to container for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: connect to container for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return connectToContainer(ctx, config, last.ClusterName, last.ServiceName, taskDef)
 	case "check":
-		fmt.Printf("%s Repeating: run checks for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: run checks for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		checkAction(ctx, config, selectedCluster, selectedService, taskDef)
 		return nil
 	case "force-update":
-		fmt.Printf("%s Repeating: force update for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: force update for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return forceUpdateService(ctx, config, last.ClusterName, last.ServiceName)
 	case "capacity":
 		// Capacity requires user input; provide info and exit
-		fmt.Printf("%s Stored action 'capacity' requires input; please select it manually.\n", color("Note:", ColorYellow))
+		fmt.Printf("%s Stored action 'capacity' requires input; please select it manually.\n", qc.Colorize("Note:", qc.ColorYellow))
 		return nil
 	case "image":
-		fmt.Printf("%s Stored action 'image' requires input; please select it manually.\n", color("Note:", ColorYellow))
+		fmt.Printf("%s Stored action 'image' requires input; please select it manually.\n", qc.Colorize("Note:", qc.ColorYellow))
 		return nil
 	case "service-config":
-		fmt.Printf("%s Repeating: service configuration for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: service configuration for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		showServiceConfiguration(ctx, config, last.ClusterName, last.ServiceName)
 		return nil
 	case "task-defs":
-		fmt.Printf("%s Repeating: task definition history for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: task definition history for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return showTaskDefinitionHistory(ctx, config, *tdArn)
 	case "healthchecks":
-		fmt.Printf("%s Repeating: health checks for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: health checks for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		// Reuse current taskDef for repeat
 		showHealthChecks(ctx, config, last.ClusterName, selectedService, taskDef)
 		return nil
 	case "enable-exec":
-		fmt.Printf("%s Repeating: enable exec for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: enable exec for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		enableExecAction(ctx, config, selectedCluster, selectedService, taskDef)
 		return nil
 	case "security-groups":
-		fmt.Printf("%s Repeating: security groups for %s/%s\n", color("Info:", ColorCyan), colorBold(last.ClusterName, ColorGreen), colorBold(last.ServiceName, ColorGreen))
+		fmt.Printf("%s Repeating: security groups for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		showSecurityGroups(ctx, config, last.ClusterName, last.ServiceName)
 		return nil
 	default:

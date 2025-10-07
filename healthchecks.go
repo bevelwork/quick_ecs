@@ -9,17 +9,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // showHealthChecks prints task definition container health checks and ALB target group health checks with timeouts
 func showHealthChecks(ctx context.Context, config *Config, clusterName string, service *ServiceInfo, taskDef *types.TaskDefinition) {
-	fmt.Printf("\n%s\n", color("Health Checks Overview:", ColorBlue))
-	fmt.Printf("- %s Task definition health checks run inside the container using a command; they report container health to ECS.\n", color("Task checks:", ColorCyan))
-	fmt.Printf("- %s ALB health checks probe the service endpoint over the network; results depend on VPC networking (subnets, security groups, NACLs, routing) and target port exposure.\n", color("ALB checks:", ColorCyan))
+	fmt.Printf("\n%s\n", qc.Colorize("Health Checks Overview:", qc.ColorBlue))
+	fmt.Printf("- %s Task definition health checks run inside the container using a command; they report container health to ECS.\n", qc.Colorize("Task checks:", qc.ColorCyan))
+	fmt.Printf("- %s ALB health checks probe the service endpoint over the network; results depend on VPC networking (subnets, security groups, NACLs, routing) and target port exposure.\n", qc.Colorize("ALB checks:", qc.ColorCyan))
 	fmt.Printf("- Time to mark unhealthy is approximately attempts × interval (typical) or attempts × (interval + timeout) (worst-case), after any start period/grace.\n")
 
 	// 1) Task definition container health checks
-	fmt.Printf("\n%s\n", color("Task Definition Health Checks:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Task Definition Health Checks:", qc.ColorBlue))
 	hasHC := false
 	secFmt := func(s int32) string {
 		if s >= 60 {
@@ -62,7 +63,7 @@ func showHealthChecks(ctx context.Context, config *Config, clusterName string, s
 	}
 
 	// 2) ALB health checks
-	fmt.Printf("\n%s\n", color("ALB Target Group Health Checks:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("ALB Target Group Health Checks:", qc.ColorBlue))
 	svcOut, err := config.ECSClient.DescribeServices(ctx, &ecs.DescribeServicesInput{Cluster: &clusterName, Services: []string{service.Name}})
 	if err != nil || len(svcOut.Services) == 0 || len(svcOut.Services[0].LoadBalancers) == 0 || svcOut.Services[0].LoadBalancers[0].TargetGroupArn == nil {
 		fmt.Printf("No ALB/TargetGroup configuration found for service.\n")

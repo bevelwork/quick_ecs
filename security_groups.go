@@ -11,17 +11,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // showSecurityGroups prints ALB and Task security group configuration only
 func showSecurityGroups(ctx context.Context, config *Config, clusterName, serviceName string) {
 	out, err := config.ECSClient.DescribeServices(ctx, &ecs.DescribeServicesInput{Cluster: &clusterName, Services: []string{serviceName}})
 	if err != nil || len(out.Services) == 0 {
-		fmt.Printf("%s Unable to describe service: %v\n", color("Error:", ColorRed), err)
+		fmt.Printf("%s Unable to describe service: %v\n", qc.Colorize("Error:", qc.ColorRed), err)
 		return
 	}
 	s := out.Services[0]
-	fmt.Printf("\n%s\n", color("Security Group Configuration:", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("Security Group Configuration:", qc.ColorBlue))
 	albSgIds, _ := resolveAlbSecurityGroups(ctx, config, s)
 	if len(albSgIds) > 0 {
 		printSgListWithNamesMultiline(ctx, config, "ALB SecurityGroups:", albSgIds)
@@ -280,9 +281,9 @@ func displayAggregatedSgRules(ctx context.Context, config *Config, sgIds []strin
 	for _, k := range keys {
 		dirLabel := ""
 		if k.dir == "in" {
-			dirLabel = color("[In]", ColorGreen)
+			dirLabel = qc.Colorize("[In]", qc.ColorGreen)
 		} else {
-			dirLabel = color("[Out]", ColorBlue)
+			dirLabel = qc.Colorize("[Out]", qc.ColorBlue)
 		}
 		portStr := "all"
 		if k.from >= 0 && k.to >= 0 {
@@ -337,7 +338,7 @@ func printSgListWithNamesMultiline(ctx context.Context, config *Config, header s
 	}
 	for _, id := range sgIds {
 		if n, ok := names[id]; ok && n != "" {
-			fmt.Printf("  - %s(%s)\n", id, color(n, ColorBlue))
+			fmt.Printf("  - %s(%s)\n", id, qc.Colorize(n, qc.ColorBlue))
 		} else {
 			fmt.Printf("  - %s\n", id)
 		}

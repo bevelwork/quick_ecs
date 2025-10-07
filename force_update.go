@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // forceUpdateAction handles the force update action
 func forceUpdateAction(ctx context.Context, config *Config, selectedCluster *ClusterInfo, selectedService *ServiceInfo) {
-	fmt.Printf("Force updating service: %s\n", colorBold(selectedService.Name, ColorCyan))
+	fmt.Printf("Force updating service: %s\n", qc.ColorizeBold(selectedService.Name, qc.ColorCyan))
 
 	// Confirm the force update
-	fmt.Printf("%s", color("Force update will restart all tasks. Continue? (y/N): ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Force update will restart all tasks. Continue? (y/N): ", qc.ColorYellow))
 	confirmInput, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -38,7 +39,7 @@ func forceUpdateAction(ctx context.Context, config *Config, selectedCluster *Clu
 // forceUpdateService forces a new deployment and waits for completion
 func forceUpdateService(ctx context.Context, config *Config, clusterName, serviceName string) error {
 	// Force a new deployment
-	fmt.Printf("Initiating force update for service %s...\n", colorBold(serviceName, ColorCyan))
+	fmt.Printf("Initiating force update for service %s...\n", qc.ColorizeBold(serviceName, qc.ColorCyan))
 
 	_, err := config.ECSClient.UpdateService(ctx, &ecs.UpdateServiceInput{
 		Cluster:            &clusterName,

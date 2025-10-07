@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // updateImageAction handles the image update action
@@ -17,7 +18,7 @@ func updateImageAction(ctx context.Context, config *Config, selectedCluster *Clu
 	reader := bufio.NewReader(os.Stdin)
 
 	// Update image version
-	fmt.Printf("%s", color("Enter new image version/tag: ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Enter new image version/tag: ", qc.ColorYellow))
 	newImageVersion, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -31,7 +32,7 @@ func updateImageAction(ctx context.Context, config *Config, selectedCluster *Clu
 	// Create new task definition with updated image
 	containerImage := getContainerImage(taskDef)
 	newImage := updateImageVersion(containerImage, newImageVersion)
-	fmt.Printf("Updating image to: %s\n", colorBold(newImage, ColorCyan))
+	fmt.Printf("Updating image to: %s\n", qc.ColorizeBold(newImage, qc.ColorCyan))
 
 	newTaskDefArn, err := showProgressWithResult("Creating new task definition...", func() (string, error) {
 		return createNewTaskDefinition(ctx, config, taskDef, newImage)
@@ -39,10 +40,10 @@ func updateImageAction(ctx context.Context, config *Config, selectedCluster *Clu
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Created new task definition: %s\n", colorBold(newTaskDefArn, ColorGreen))
+	fmt.Printf("Created new task definition: %s\n", qc.ColorizeBold(newTaskDefArn, qc.ColorGreen))
 
 	// Update service with new task definition
-	fmt.Printf("%s", color("Force update service? (y/N): ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Force update service? (y/N): ", qc.ColorYellow))
 	confirmInput, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -61,7 +62,7 @@ func updateImageAction(ctx context.Context, config *Config, selectedCluster *Clu
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Service %s updated successfully!\n", colorBold(selectedService.Name, ColorGreen))
+	fmt.Printf("Service %s updated successfully!\n", qc.ColorizeBold(selectedService.Name, qc.ColorGreen))
 }
 
 // getContainerImage extracts the container image from the first container definition.

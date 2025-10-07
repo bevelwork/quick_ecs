@@ -13,11 +13,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // checkAction handles the configuration check action
 func checkAction(ctx context.Context, config *Config, selectedCluster *ClusterInfo, selectedService *ServiceInfo, taskDef *types.TaskDefinition) {
-	fmt.Printf("Running configuration checks for service: %s\n", colorBold(selectedService.Name, ColorCyan))
+	fmt.Printf(
+		"Running configuration checks for service: %s\n",
+		qc.ColorizeBold(selectedService.Name, qc.ColorCyan),
+	)
 
 	err := runConfigurationChecks(ctx, config, selectedCluster.Name, selectedService, taskDef)
 	if err != nil {
@@ -27,7 +31,7 @@ func checkAction(ctx context.Context, config *Config, selectedCluster *ClusterIn
 
 // runConfigurationChecks runs comprehensive configuration checks for the ECS service
 func runConfigurationChecks(ctx context.Context, config *Config, clusterName string, service *ServiceInfo, taskDef *types.TaskDefinition) error {
-	fmt.Printf("\n%s\n", color("=== ECS Configuration Health Check ===", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("=== ECS Configuration Health Check ===", qc.ColorBlue))
 	fmt.Println(strings.Repeat("=", 50))
 
 	var issues []string
@@ -39,7 +43,7 @@ func runConfigurationChecks(ctx context.Context, config *Config, clusterName str
 	if hasRunningTasks {
 		fmt.Printf("  ✅ %d running task(s) found\n", runningTaskCount)
 	} else {
-		fmt.Printf("  ⚠️  %s\n", color("No running tasks found", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("No running tasks found", qc.ColorYellow))
 		warnings = append(warnings, "No running tasks - some checks may be limited")
 	}
 
@@ -47,7 +51,7 @@ func runConfigurationChecks(ctx context.Context, config *Config, clusterName str
 	fmt.Printf("🔍 Checking desired count...\n")
 	if service.DesiredCount == 0 {
 		issues = append(issues, "Desired count is 0 - no containers will be built")
-		fmt.Printf("  ❌ %s\n", color("Desired count is 0", ColorRed))
+		fmt.Printf("  ❌ %s\n", qc.Colorize("Desired count is 0", qc.ColorRed))
 	} else {
 		fmt.Printf("  ✅ Desired count: %d\n", service.DesiredCount)
 	}
@@ -93,14 +97,14 @@ func runConfigurationChecks(ctx context.Context, config *Config, clusterName str
 	warnings = append(warnings, additionalWarnings...)
 
 	// Display summary
-	fmt.Printf("\n%s\n", color("=== Check Summary ===", ColorBlue))
+	fmt.Printf("\n%s\n", qc.Colorize("=== Check Summary ===", qc.ColorBlue))
 	fmt.Println(strings.Repeat("=", 30))
 
 	if len(issues) == 0 && len(warnings) == 0 {
-		fmt.Printf("🎉 %s\n", color("All checks passed! No issues found.", ColorGreen))
+		fmt.Printf("🎉 %s\n", qc.Colorize("All checks passed! No issues found.", qc.ColorGreen))
 	} else {
 		if len(issues) > 0 {
-			fmt.Printf("❌ %s (%d issues found):\n", color("Critical Issues", ColorRed), len(issues))
+			fmt.Printf("❌ %s (%d issues found):\n", qc.Colorize("Critical Issues", qc.ColorRed), len(issues))
 			for i, issue := range issues {
 				fmt.Printf("  %d. %s\n", i+1, issue)
 			}
@@ -117,12 +121,12 @@ func runConfigurationChecks(ctx context.Context, config *Config, clusterName str
 				warningCounts[w]++
 			}
 			totalUnique := len(warningCounts)
-			fmt.Printf("⚠️  %s (%d warnings, %d unique):\n", color("Warnings", ColorYellow), len(warnings), totalUnique)
+			fmt.Printf("⚠️  %s (%d warnings, %d unique):\n", qc.Colorize("Warnings", qc.ColorYellow), len(warnings), totalUnique)
 			idx := 1
 			for _, w := range warningOrder {
 				count := warningCounts[w]
 				if count > 1 {
-					fmt.Printf("  %d. %s %s\n", idx, w, color(fmt.Sprintf("(quantity: %d)", count), ColorCyan))
+					fmt.Printf("  %d. %s %s\n", idx, w, qc.Colorize(fmt.Sprintf("(quantity: %d)", count), qc.ColorCyan))
 				} else {
 					fmt.Printf("  %d. %s\n", idx, w)
 				}
@@ -157,7 +161,7 @@ func checkIAMRoles(ctx context.Context, config *Config, taskDef *types.TaskDefin
 	// Check execution role
 	if taskDef.ExecutionRoleArn == nil {
 		issues = append(issues, "Execution role is missing")
-		fmt.Printf("  ❌ %s\n", color("Execution role is missing", ColorRed))
+		fmt.Printf("  ❌ %s\n", qc.Colorize("Execution role is missing", qc.ColorRed))
 	} else {
 		fmt.Printf("  ✅ Execution role: %s\n", sanitizeARN(*taskDef.ExecutionRoleArn, config.PrivateMode))
 
@@ -171,7 +175,7 @@ func checkIAMRoles(ctx context.Context, config *Config, taskDef *types.TaskDefin
 	// Check task role
 	if taskDef.TaskRoleArn == nil {
 		warnings = append(warnings, "Task role is missing - containers will run with execution role permissions")
-		fmt.Printf("  ⚠️  %s\n", color("Task role is missing", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Task role is missing", qc.ColorYellow))
 	} else {
 		fmt.Printf("  ✅ Task role: %s\n", sanitizeARN(*taskDef.TaskRoleArn, config.PrivateMode))
 
@@ -205,7 +209,7 @@ func validateExecutionRole(ctx context.Context, config *Config, roleName string,
 	})
 	if err != nil {
 		issues = append(issues, fmt.Sprintf("Execution role '%s' does not exist or is not accessible", roleName))
-		fmt.Printf("    ❌ %s\n", color("Role does not exist", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("Role does not exist", qc.ColorRed))
 		return issues, warnings
 	}
 
@@ -215,7 +219,7 @@ func validateExecutionRole(ctx context.Context, config *Config, roleName string,
 	})
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("Could not list policies for execution role '%s'", roleName))
-		fmt.Printf("    ⚠️  %s\n", color("Could not list policies", ColorYellow))
+		fmt.Printf("    ⚠️  %s\n", qc.Colorize("Could not list policies", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -234,7 +238,7 @@ func validateExecutionRole(ctx context.Context, config *Config, roleName string,
 
 	if !hasRequiredPolicy {
 		issues = append(issues, "Execution role missing required ECS task execution policy")
-		fmt.Printf("    ❌ %s\n", color("Missing ECS task execution policy", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("Missing ECS task execution policy", qc.ColorRed))
 	} else {
 		fmt.Printf("    ✅ Has ECS task execution policy\n")
 	}
@@ -242,7 +246,7 @@ func validateExecutionRole(ctx context.Context, config *Config, roleName string,
 	// Additional validation that requires running tasks
 	if !hasRunningTasks {
 		warnings = append(warnings, "Unable to fully validate execution role - need running tasks to check actual permissions")
-		fmt.Printf("    ⚠️  %s\n", color("Need running tasks for full validation", ColorYellow))
+		fmt.Printf("    ⚠️  %s\n", qc.Colorize("Need running tasks for full validation", qc.ColorYellow))
 	}
 
 	return issues, warnings
@@ -259,7 +263,7 @@ func validateTaskRole(ctx context.Context, config *Config, roleName string, hasR
 	})
 	if err != nil {
 		issues = append(issues, fmt.Sprintf("Task role '%s' does not exist or is not accessible", roleName))
-		fmt.Printf("    ❌ %s\n", color("Role does not exist", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("Role does not exist", qc.ColorRed))
 		return issues, warnings
 	}
 
@@ -268,7 +272,7 @@ func validateTaskRole(ctx context.Context, config *Config, roleName string, hasR
 	// Additional validation that requires running tasks
 	if !hasRunningTasks {
 		warnings = append(warnings, "Unable to fully validate task role - need running tasks to check actual permissions")
-		fmt.Printf("    ⚠️  %s\n", color("Need running tasks for full validation", ColorYellow))
+		fmt.Printf("    ⚠️  %s\n", qc.Colorize("Need running tasks for full validation", qc.ColorYellow))
 	}
 
 	return issues, warnings
@@ -291,7 +295,7 @@ func checkSecurityGroups(ctx context.Context, config *Config, clusterName, servi
 
 	if len(containerPorts) == 0 {
 		warnings = append(warnings, "No container ports defined in task definition")
-		fmt.Printf("  ⚠️  %s\n", color("No container ports defined", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("No container ports defined", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -302,7 +306,7 @@ func checkSecurityGroups(ctx context.Context, config *Config, clusterName, servi
 		if slices.Contains(taskDef.RequiresCompatibilities, types.CompatibilityFargate) {
 			fmt.Printf("  ℹ️  Fargate launch type - security groups managed by service network configuration\n")
 			warnings = append(warnings, "Fargate security group validation requires service network configuration - check manually")
-			fmt.Printf("  ⚠️  %s\n", color("Manual security group check required for Fargate", ColorYellow))
+			fmt.Printf("  ⚠️  %s\n", qc.Colorize("Manual security group check required for Fargate", qc.ColorYellow))
 			return issues, warnings
 		}
 	}
@@ -310,7 +314,7 @@ func checkSecurityGroups(ctx context.Context, config *Config, clusterName, servi
 	// For EC2 launch type, check the instances
 	if !hasRunningTasks {
 		warnings = append(warnings, "Unable to check EC2 instance security groups - need running tasks")
-		fmt.Printf("  ⚠️  %s\n", color("Need running tasks to check EC2 security groups", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Need running tasks to check EC2 security groups", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -322,7 +326,7 @@ func checkSecurityGroups(ctx context.Context, config *Config, clusterName, servi
 	})
 	if err != nil || len(tasks.TaskArns) == 0 {
 		warnings = append(warnings, "Could not get running tasks to check EC2 instances")
-		fmt.Printf("  ⚠️  %s\n", color("Could not get running tasks", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Could not get running tasks", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -333,7 +337,7 @@ func checkSecurityGroups(ctx context.Context, config *Config, clusterName, servi
 	})
 	if err != nil || len(taskDetails.Tasks) == 0 {
 		warnings = append(warnings, "Could not get task details to check EC2 instances")
-		fmt.Printf("  ⚠️  %s\n", color("Could not get task details", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Could not get task details", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -358,7 +362,7 @@ func checkSecurityGroups(ctx context.Context, config *Config, clusterName, servi
 
 	if ec2InstanceID == "" {
 		warnings = append(warnings, "Could not find EC2 instance for running tasks")
-		fmt.Printf("  ⚠️  %s\n", color("Could not find EC2 instance", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Could not find EC2 instance", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -383,13 +387,13 @@ func checkEC2Instance(ctx context.Context, config *Config, instanceID string, co
 	})
 	if err != nil {
 		issues = append(issues, fmt.Sprintf("Could not describe EC2 instance %s: %v", instanceID, err))
-		fmt.Printf("    ❌ %s\n", color("Could not describe EC2 instance", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("Could not describe EC2 instance", qc.ColorRed))
 		return issues, warnings
 	}
 
 	if len(instances.Reservations) == 0 || len(instances.Reservations[0].Instances) == 0 {
 		issues = append(issues, fmt.Sprintf("EC2 instance %s not found", instanceID))
-		fmt.Printf("    ❌ %s\n", color("EC2 instance not found", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("EC2 instance not found", qc.ColorRed))
 		return issues, warnings
 	}
 
@@ -398,7 +402,7 @@ func checkEC2Instance(ctx context.Context, config *Config, instanceID string, co
 	// Check IAM instance profile
 	if instance.IamInstanceProfile == nil {
 		issues = append(issues, "EC2 instance has no IAM instance profile attached")
-		fmt.Printf("    ❌ %s\n", color("No IAM instance profile", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("No IAM instance profile", qc.ColorRed))
 	} else {
 		profileArn := *instance.IamInstanceProfile.Arn
 		fmt.Printf("    ✅ IAM instance profile: %s\n", profileArn)
@@ -413,7 +417,7 @@ func checkEC2Instance(ctx context.Context, config *Config, instanceID string, co
 	// Check security groups
 	if len(instance.SecurityGroups) == 0 {
 		issues = append(issues, "EC2 instance has no security groups")
-		fmt.Printf("    ❌ %s\n", color("No security groups", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("No security groups", qc.ColorRed))
 		return issues, warnings
 	}
 
@@ -453,14 +457,14 @@ func validateInstanceProfile(ctx context.Context, config *Config, profileName st
 	})
 	if err != nil {
 		issues = append(issues, fmt.Sprintf("Instance profile '%s' does not exist or is not accessible", profileName))
-		fmt.Printf("      ❌ %s\n", color("Instance profile does not exist", ColorRed))
+		fmt.Printf("      ❌ %s\n", qc.Colorize("Instance profile does not exist", qc.ColorRed))
 		return issues, warnings
 	}
 
 	// Check if profile has a role
 	if len(profiles.InstanceProfile.Roles) == 0 {
 		issues = append(issues, fmt.Sprintf("Instance profile '%s' has no IAM role attached", profileName))
-		fmt.Printf("      ❌ %s\n", color("No IAM role attached to instance profile", ColorRed))
+		fmt.Printf("      ❌ %s\n", qc.Colorize("No IAM role attached to instance profile", qc.ColorRed))
 	} else {
 		roleName := *profiles.InstanceProfile.Roles[0].RoleName
 		fmt.Printf("      ✅ IAM role attached: %s\n", roleName)
@@ -471,7 +475,7 @@ func validateInstanceProfile(ctx context.Context, config *Config, profileName st
 		})
 		if err != nil {
 			issues = append(issues, fmt.Sprintf("IAM role '%s' attached to instance profile does not exist", roleName))
-			fmt.Printf("        ❌ %s\n", color("IAM role does not exist", ColorRed))
+			fmt.Printf("        ❌ %s\n", qc.Colorize("IAM role does not exist", qc.ColorRed))
 		} else {
 			fmt.Printf("        ✅ IAM role exists\n")
 		}
@@ -491,7 +495,7 @@ func validateSecurityGroupRules(ctx context.Context, config *Config, securityGro
 	})
 	if err != nil {
 		issues = append(issues, fmt.Sprintf("Could not describe security groups: %v", err))
-		fmt.Printf("    ❌ %s\n", color("Could not describe security groups", ColorRed))
+		fmt.Printf("    ❌ %s\n", qc.Colorize("Could not describe security groups", qc.ColorRed))
 		return issues, warnings
 	}
 
@@ -521,7 +525,7 @@ func validateSecurityGroupRules(ctx context.Context, config *Config, securityGro
 				hasPortAccess = true
 			} else {
 				issues = append(issues, fmt.Sprintf("Security group %s may not allow inbound access to port %d", *sg.GroupId, port))
-				fmt.Printf("      ❌ %s\n", color(fmt.Sprintf("No inbound rule found for port %d", port), ColorRed))
+				fmt.Printf("      ❌ %s\n", qc.Colorize(fmt.Sprintf("No inbound rule found for port %d", port), qc.ColorRed))
 			}
 		}
 
@@ -544,13 +548,13 @@ func checkDeploymentStatus(ctx context.Context, config *Config, clusterName, ser
 	})
 	if err != nil {
 		warnings := []string{fmt.Sprintf("Could not check deployment status: %v", err)}
-		fmt.Printf("  ⚠️  %s\n", color("Could not check deployment status", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Could not check deployment status", qc.ColorYellow))
 		return warnings
 	}
 
 	if len(services.Services) == 0 {
 		issues = append(issues, "Service not found")
-		fmt.Printf("  ❌ %s\n", color("Service not found", ColorRed))
+		fmt.Printf("  ❌ %s\n", qc.Colorize("Service not found", qc.ColorRed))
 		return issues
 	}
 
@@ -560,7 +564,7 @@ func checkDeploymentStatus(ctx context.Context, config *Config, clusterName, ser
 	for _, deployment := range service.Deployments {
 		if deployment.Status != nil && *deployment.Status == "FAILED" {
 			issues = append(issues, fmt.Sprintf("Deployment failed: %s", *deployment.Id))
-			fmt.Printf("  ❌ %s\n", color("Deployment failed", ColorRed))
+			fmt.Printf("  ❌ %s\n", qc.Colorize("Deployment failed", qc.ColorRed))
 		} else if deployment.Status != nil && *deployment.Status == "ACTIVE" {
 			fmt.Printf("  ✅ Active deployment: %s\n", *deployment.Id)
 		}
@@ -575,37 +579,37 @@ func checkDeploymentStatus(ctx context.Context, config *Config, clusterName, ser
 			// Check for specific error patterns
 			if strings.Contains(message, "cannotpullcontainererror") {
 				issues = append(issues, fmt.Sprintf("Container pull error: %s", *event.Message))
-				fmt.Printf("  ❌ %s\n", color("Container pull error detected", ColorRed))
+				fmt.Printf("  ❌ %s\n", qc.Colorize("Container pull error detected", qc.ColorRed))
 				foundSpecificError = true
 				break
 			} else if strings.Contains(message, "manifest for") && strings.Contains(message, "not found") {
 				issues = append(issues, fmt.Sprintf("Image manifest not found: %s", *event.Message))
-				fmt.Printf("  ❌ %s\n", color("Image manifest not found", ColorRed))
+				fmt.Printf("  ❌ %s\n", qc.Colorize("Image manifest not found", qc.ColorRed))
 				foundSpecificError = true
 				break
 			} else if strings.Contains(message, "manifest unknown") {
 				issues = append(issues, fmt.Sprintf("Unknown image manifest: %s", *event.Message))
-				fmt.Printf("  ❌ %s\n", color("Unknown image manifest", ColorRed))
+				fmt.Printf("  ❌ %s\n", qc.Colorize("Unknown image manifest", qc.ColorRed))
 				foundSpecificError = true
 				break
 			} else if strings.Contains(message, "requested image not found") {
 				issues = append(issues, fmt.Sprintf("Image not found: %s", *event.Message))
-				fmt.Printf("  ❌ %s\n", color("Image not found", ColorRed))
+				fmt.Printf("  ❌ %s\n", qc.Colorize("Image not found", qc.ColorRed))
 				foundSpecificError = true
 				break
 			} else if strings.Contains(message, "access denied") {
 				issues = append(issues, fmt.Sprintf("Access denied error: %s", *event.Message))
-				fmt.Printf("  ❌ %s\n", color("Access denied error", ColorRed))
+				fmt.Printf("  ❌ %s\n", qc.Colorize("Access denied error", qc.ColorRed))
 				foundSpecificError = true
 				break
 			} else if strings.Contains(message, "unauthorized") {
 				issues = append(issues, fmt.Sprintf("Unauthorized error: %s", *event.Message))
-				fmt.Printf("  ❌ %s\n", color("Unauthorized error", ColorRed))
+				fmt.Printf("  ❌ %s\n", qc.Colorize("Unauthorized error", qc.ColorRed))
 				foundSpecificError = true
 				break
 			} else if strings.Contains(message, "failed") {
 				issues = append(issues, fmt.Sprintf("Deployment failure: %s", *event.Message))
-				fmt.Printf("  ❌ %s\n", color("Deployment failure detected", ColorRed))
+				fmt.Printf("  ❌ %s\n", qc.Colorize("Deployment failure detected", qc.ColorRed))
 				foundSpecificError = true
 				break
 			}
@@ -668,25 +672,25 @@ func checkTaskFailures(ctx context.Context, config *Config, clusterName, service
 					// Check for container pull errors
 					if strings.Contains(reason, "cannotpullcontainererror") {
 						issues = append(issues, fmt.Sprintf("Task stopped due to container pull error: %s", *task.StoppedReason))
-						fmt.Printf("  ❌ %s\n", color("Task stopped - container pull error", ColorRed))
+						fmt.Printf("  ❌ %s\n", qc.Colorize("Task stopped - container pull error", qc.ColorRed))
 					} else if strings.Contains(reason, "manifest for") && strings.Contains(reason, "not found") {
 						issues = append(issues, fmt.Sprintf("Task stopped - image manifest not found: %s", *task.StoppedReason))
-						fmt.Printf("  ❌ %s\n", color("Task stopped - image manifest not found", ColorRed))
+						fmt.Printf("  ❌ %s\n", qc.Colorize("Task stopped - image manifest not found", qc.ColorRed))
 					} else if strings.Contains(reason, "manifest unknown") {
 						issues = append(issues, fmt.Sprintf("Task stopped - unknown image manifest: %s", *task.StoppedReason))
-						fmt.Printf("  ❌ %s\n", color("Task stopped - unknown image manifest", ColorRed))
+						fmt.Printf("  ❌ %s\n", qc.Colorize("Task stopped - unknown image manifest", qc.ColorRed))
 					} else if strings.Contains(reason, "requested image not found") {
 						issues = append(issues, fmt.Sprintf("Task stopped - image not found: %s", *task.StoppedReason))
-						fmt.Printf("  ❌ %s\n", color("Task stopped - image not found", ColorRed))
+						fmt.Printf("  ❌ %s\n", qc.Colorize("Task stopped - image not found", qc.ColorRed))
 					} else if strings.Contains(reason, "access denied") {
 						issues = append(issues, fmt.Sprintf("Task stopped - access denied: %s", *task.StoppedReason))
-						fmt.Printf("  ❌ %s\n", color("Task stopped - access denied", ColorRed))
+						fmt.Printf("  ❌ %s\n", qc.Colorize("Task stopped - access denied", qc.ColorRed))
 					} else if strings.Contains(reason, "unauthorized") {
 						issues = append(issues, fmt.Sprintf("Task stopped - unauthorized: %s", *task.StoppedReason))
-						fmt.Printf("  ❌ %s\n", color("Task stopped - unauthorized", ColorRed))
+						fmt.Printf("  ❌ %s\n", qc.Colorize("Task stopped - unauthorized", qc.ColorRed))
 					} else if strings.Contains(reason, "failed") {
 						issues = append(issues, fmt.Sprintf("Task stopped - failure: %s", *task.StoppedReason))
-						fmt.Printf("  ❌ %s\n", color("Task stopped - failure", ColorRed))
+						fmt.Printf("  ❌ %s\n", qc.Colorize("Task stopped - failure", qc.ColorRed))
 					}
 				}
 			}
@@ -700,22 +704,22 @@ func checkTaskFailures(ctx context.Context, config *Config, clusterName, service
 				// Check for container pull errors
 				if strings.Contains(reason, "cannotpullcontainererror") {
 					issues = append(issues, fmt.Sprintf("Container failed to start - pull error: %s", *container.Reason))
-					fmt.Printf("  ❌ %s\n", color("Container failed - pull error", ColorRed))
+					fmt.Printf("  ❌ %s\n", qc.Colorize("Container failed - pull error", qc.ColorRed))
 				} else if strings.Contains(reason, "manifest for") && strings.Contains(reason, "not found") {
 					issues = append(issues, fmt.Sprintf("Container failed - image manifest not found: %s", *container.Reason))
-					fmt.Printf("  ❌ %s\n", color("Container failed - image manifest not found", ColorRed))
+					fmt.Printf("  ❌ %s\n", qc.Colorize("Container failed - image manifest not found", qc.ColorRed))
 				} else if strings.Contains(reason, "manifest unknown") {
 					issues = append(issues, fmt.Sprintf("Container failed - unknown image manifest: %s", *container.Reason))
-					fmt.Printf("  ❌ %s\n", color("Container failed - unknown image manifest", ColorRed))
+					fmt.Printf("  ❌ %s\n", qc.Colorize("Container failed - unknown image manifest", qc.ColorRed))
 				} else if strings.Contains(reason, "requested image not found") {
 					issues = append(issues, fmt.Sprintf("Container failed - image not found: %s", *container.Reason))
-					fmt.Printf("  ❌ %s\n", color("Container failed - image not found", ColorRed))
+					fmt.Printf("  ❌ %s\n", qc.Colorize("Container failed - image not found", qc.ColorRed))
 				} else if strings.Contains(reason, "access denied") {
 					issues = append(issues, fmt.Sprintf("Container failed - access denied: %s", *container.Reason))
-					fmt.Printf("  ❌ %s\n", color("Container failed - access denied", ColorRed))
+					fmt.Printf("  ❌ %s\n", qc.Colorize("Container failed - access denied", qc.ColorRed))
 				} else if strings.Contains(reason, "unauthorized") {
 					issues = append(issues, fmt.Sprintf("Container failed - unauthorized: %s", *container.Reason))
-					fmt.Printf("  ❌ %s\n", color("Container failed - unauthorized", ColorRed))
+					fmt.Printf("  ❌ %s\n", qc.Colorize("Container failed - unauthorized", qc.ColorRed))
 				}
 			}
 		}
@@ -741,7 +745,7 @@ func checkContainerImageAccess(taskDef *types.TaskDefinition) []string {
 				// Check if it's using a specific SHA (which can cause issues)
 				if strings.Contains(image, "@sha256:") {
 					issues = append(issues, "ECR image using SHA digest - ensure the specific image exists in the repository")
-					fmt.Printf("    ⚠️  %s\n", color("Using SHA digest - verify image exists", ColorYellow))
+					fmt.Printf("    ⚠️  %s\n", qc.Colorize("Using SHA digest - verify image exists", qc.ColorYellow))
 				}
 
 				// Check if it's using a tag
@@ -780,7 +784,7 @@ func checkSecretsConfiguration(taskDef *types.TaskDefinition) ([]string, []strin
 					// Check if it's an SSM parameter
 					if strings.Contains(secretArn, "parameter") {
 						warnings = append(warnings, "SSM parameter secrets require SSM and KMS permissions")
-						fmt.Printf("      ⚠️  %s\n", color("Requires SSM and KMS permissions", ColorYellow))
+						fmt.Printf("      ⚠️  %s\n", qc.Colorize("Requires SSM and KMS permissions", qc.ColorYellow))
 					}
 				}
 			}
@@ -808,19 +812,19 @@ func checkAdditionalConfiguration(taskDef *types.TaskDefinition) ([]string, []st
 		cpuInt, err := strconv.Atoi(cpu)
 		if err != nil {
 			warnings = append(warnings, "Invalid CPU configuration")
-			fmt.Printf("  ⚠️  %s\n", color("Invalid CPU configuration", ColorYellow))
+			fmt.Printf("  ⚠️  %s\n", qc.Colorize("Invalid CPU configuration", qc.ColorYellow))
 		} else {
 			memoryInt, err := strconv.Atoi(memory)
 			if err != nil {
 				warnings = append(warnings, "Invalid memory configuration")
-				fmt.Printf("  ⚠️  %s\n", color("Invalid memory configuration", ColorYellow))
+				fmt.Printf("  ⚠️  %s\n", qc.Colorize("Invalid memory configuration", qc.ColorYellow))
 			} else {
 				// Check for reasonable CPU/memory ratios
 				if memoryInt > 0 && cpuInt > 0 {
 					ratio := float64(memoryInt) / float64(cpuInt)
 					if ratio < 1.0 {
 						warnings = append(warnings, "Low memory-to-CPU ratio - consider increasing memory")
-						fmt.Printf("  ⚠️  %s\n", color("Low memory-to-CPU ratio", ColorYellow))
+						fmt.Printf("  ⚠️  %s\n", qc.Colorize("Low memory-to-CPU ratio - consider increasing memory", qc.ColorYellow))
 					} else {
 						fmt.Printf("  ✅ CPU: %s, Memory: %s MB\n", cpu, memory)
 					}
@@ -840,7 +844,7 @@ func checkAdditionalConfiguration(taskDef *types.TaskDefinition) ([]string, []st
 
 	if !hasHealthCheck {
 		warnings = append(warnings, "No health check configured - consider adding health checks")
-		fmt.Printf("  ⚠️  %s\n", color("No health check configured", ColorYellow))
+		fmt.Printf("  ⚠️ Health check not configured\n")
 	} else {
 		fmt.Printf("  ✅ Health check configured\n")
 	}
@@ -856,7 +860,7 @@ func checkAdditionalConfiguration(taskDef *types.TaskDefinition) ([]string, []st
 
 	if !hasLogConfig {
 		warnings = append(warnings, "No log configuration - consider adding CloudWatch logging")
-		fmt.Printf("  ⚠️  %s\n", color("No log configuration", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("No log configuration", qc.ColorYellow))
 	} else {
 		fmt.Printf("  ✅ Log configuration present\n")
 	}
@@ -876,7 +880,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	})
 	if err != nil || len(svcOut.Services) == 0 {
 		warnings = append(warnings, "Could not describe service to determine load balancer configuration")
-		fmt.Printf("  ⚠️  %s\n", color("Unable to determine load balancer configuration", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Unable to determine load balancer configuration", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -896,7 +900,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	}
 	if len(svc.LoadBalancers) == 0 {
 		warnings = append(warnings, "Service has no load balancer configuration")
-		fmt.Printf("  ⚠️  %s\n", color("No load balancer configured for service", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("No load balancer configured for service", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -904,7 +908,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	lbCfg := svc.LoadBalancers[0]
 	if lbCfg.TargetGroupArn == nil {
 		warnings = append(warnings, "No target group associated with service load balancer config")
-		fmt.Printf("  ⚠️  %s\n", color("No target group associated", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("No target group associated", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -912,7 +916,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	tgOut, err := config.ELBv2Client.DescribeTargetGroups(ctx, &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{tgArn}})
 	if err != nil || len(tgOut.TargetGroups) == 0 {
 		issues = append(issues, "Target group not found or inaccessible")
-		fmt.Printf("  ❌ %s\n", color("Target group not found", ColorRed))
+		fmt.Printf("  ❌ %s\n", qc.Colorize("Target group not found", qc.ColorRed))
 		return issues, warnings
 	}
 
@@ -921,7 +925,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 
 	// If deployment failed due to health checks, print detailed health check configuration
 	if healthFailed {
-		fmt.Printf("  %s Deployment reported health check failures. Inspecting Target Group health check configuration...\n", color("Info:", ColorYellow))
+		fmt.Printf("  %s Deployment reported health check failures. Inspecting Target Group health check configuration...\n", qc.Colorize("Info:", qc.ColorYellow))
 		// Health check configuration details
 		if tg.HealthCheckProtocol != "" {
 			fmt.Printf("    • HealthCheckProtocol: %s\n", tg.HealthCheckProtocol)
@@ -975,7 +979,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	// Find associated load balancer
 	if len(tg.LoadBalancerArns) == 0 {
 		warnings = append(warnings, "Target group has no associated load balancer")
-		fmt.Printf("  ⚠️  %s\n", color("No associated load balancer", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("No associated load balancer", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -983,7 +987,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	lbOut, err := config.ELBv2Client.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{LoadBalancerArns: []string{lbArn}})
 	if err != nil || len(lbOut.LoadBalancers) == 0 {
 		issues = append(issues, "Load balancer not found or inaccessible")
-		fmt.Printf("  ❌ %s\n", color("Load balancer not found", ColorRed))
+		fmt.Printf("  ❌ %s\n", qc.Colorize("Load balancer not found", qc.ColorRed))
 		return issues, warnings
 	}
 
@@ -994,7 +998,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	lsOut, err := config.ELBv2Client.DescribeListeners(ctx, &elasticloadbalancingv2.DescribeListenersInput{LoadBalancerArn: lb.LoadBalancerArn})
 	if err != nil || len(lsOut.Listeners) == 0 {
 		issues = append(issues, "No listeners configured on ALB")
-		fmt.Printf("  ❌ %s\n", color("No ALB listeners configured", ColorRed))
+		fmt.Printf("  ❌ %s\n", qc.Colorize("No ALB listeners configured", qc.ColorRed))
 	} else {
 		var have80, have443 bool
 		for _, l := range lsOut.Listeners {
@@ -1018,14 +1022,14 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 			fmt.Printf("\n")
 		} else {
 			warnings = append(warnings, "No standard web listeners (80/443) detected")
-			fmt.Printf("  ⚠️  %s\n", color("No 80/443 listeners detected", ColorYellow))
+			fmt.Printf("  ⚠️  %s\n", qc.Colorize("No 80/443 listeners detected", qc.ColorYellow))
 		}
 	}
 
 	// Validate ALB Security Groups inbound on 80/443 and outbound to ECS SGs on container port(s)
 	if len(lb.SecurityGroups) == 0 {
 		warnings = append(warnings, "ALB has no security groups attached")
-		fmt.Printf("  ⚠️  %s\n", color("ALB has no security groups", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("ALB has no security groups", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -1042,7 +1046,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 	egressOK, egressWarn := checkAlbOutboundRules(ctx, config, albSgIds)
 	if !egressOK {
 		warnings = append(warnings, "ALB security group egress rules may block traffic to ECS tasks")
-		fmt.Printf("  ⚠️  %s\n", color("ALB SG egress may be restrictive", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("ALB SG egress may be restrictive", qc.ColorYellow))
 	}
 	if egressWarn != "" {
 		warnings = append(warnings, egressWarn)
@@ -1073,7 +1077,7 @@ func checkALBConfiguration(ctx context.Context, config *Config, clusterName stri
 				}
 				if !match {
 					warnings = append(warnings, fmt.Sprintf("Target group health check port %d does not match any container port %v", p, containerPorts))
-					fmt.Printf("  ⚠️  %s\n", color("Health check port does not match container port(s)", ColorYellow))
+					fmt.Printf("  ⚠️  %s\n", qc.Colorize("Health check port does not match container port(s)", qc.ColorYellow))
 				}
 			}
 		}
@@ -1089,7 +1093,7 @@ func validateAlbSecurityGroups(ctx context.Context, config *Config, albSgIds []s
 	sgs, err := config.EC2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: albSgIds})
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("Could not describe ALB security groups: %v", err))
-		fmt.Printf("  ⚠️  %s\n", color("Could not describe ALB security groups", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("Could not describe ALB security groups", qc.ColorYellow))
 		return issues, warnings
 	}
 
@@ -1106,7 +1110,7 @@ func validateAlbSecurityGroups(ctx context.Context, config *Config, albSgIds []s
 	}
 	if !hasInbound {
 		warnings = append(warnings, "ALB SG does not expose common web ports (80/443)")
-		fmt.Printf("  ⚠️  %s\n", color("ALB SG missing inbound 80/443", ColorYellow))
+		fmt.Printf("  ⚠️  %s\n", qc.Colorize("ALB SG missing inbound 80/443", qc.ColorYellow))
 	} else {
 		fmt.Printf("  ✅ ALB SG inbound allows 80/443 (or equivalent range)\n")
 	}

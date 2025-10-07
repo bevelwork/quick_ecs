@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // updateCapacityAction handles the capacity update action
@@ -18,7 +19,7 @@ func updateCapacityAction(ctx context.Context, config *Config, selectedCluster *
 	reader := bufio.NewReader(os.Stdin)
 
 	// Update service capacity
-	fmt.Printf("%s", color("Enter new capacity (min,desired,max): ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Enter new capacity (min,desired,max): ", qc.ColorYellow))
 	capacityInput, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -58,9 +59,9 @@ func updateCapacityAction(ctx context.Context, config *Config, selectedCluster *
 	}
 
 	fmt.Printf("Updating capacity to: Min=%s, Desired=%s, Max=%s\n",
-		colorBold(fmt.Sprintf("%d", minCount), ColorCyan),
-		colorBold(fmt.Sprintf("%d", desiredCount), ColorCyan),
-		colorBold(fmt.Sprintf("%d", maxCount), ColorCyan))
+		qc.ColorizeBold(fmt.Sprintf("%d", minCount), qc.ColorCyan),
+		qc.ColorizeBold(fmt.Sprintf("%d", desiredCount), qc.ColorCyan),
+		qc.ColorizeBold(fmt.Sprintf("%d", maxCount), qc.ColorCyan))
 
 	if adjusted {
 		fmt.Printf("Deployment config: MinHealthy=%d%%, MaxPercent=%d%% (adjusted for rolling deployments)\n",
@@ -71,7 +72,7 @@ func updateCapacityAction(ctx context.Context, config *Config, selectedCluster *
 	}
 
 	// Update service capacity
-	fmt.Printf("%s", color("Update service capacity? (y/N): ", ColorYellow))
+	fmt.Printf("%s", qc.Colorize("Update service capacity? (y/N): ", qc.ColorYellow))
 	confirmInput, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -90,7 +91,7 @@ func updateCapacityAction(ctx context.Context, config *Config, selectedCluster *
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Service %s capacity updated successfully!\n", colorBold(selectedService.Name, ColorGreen))
+	fmt.Printf("Service %s capacity updated successfully!\n", qc.ColorizeBold(selectedService.Name, qc.ColorGreen))
 }
 
 // parseCapacityInput parses the capacity input string in format "min,desired,max".

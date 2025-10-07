@@ -15,11 +15,12 @@ import (
 	cloudwatchlogstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	qc "github.com/bevelwork/quick_color"
 )
 
 // streamLogsAction handles the log streaming action
 func streamLogsAction(ctx context.Context, config *Config, selectedCluster *ClusterInfo, selectedService *ServiceInfo, taskDef *types.TaskDefinition) {
-	fmt.Printf("Streaming logs for service: %s\n", colorBold(selectedService.Name, ColorCyan))
+	fmt.Printf("Streaming logs for service: %s\n", qc.ColorizeBold(selectedService.Name, qc.ColorCyan))
 	fmt.Printf("Press Ctrl+C to stop streaming\n\n")
 
 	err := streamServiceLogs(ctx, config, selectedCluster.Name, selectedService.Name, taskDef)
@@ -149,9 +150,9 @@ func streamLogs(ctx context.Context, config *Config, logGroupName string, logStr
 
 	var lastTimestamp int64 = 0
 
-	fmt.Printf("%s Interactive log streaming from %s:\n", color("====", ColorBlue), logStreams[0])
+	fmt.Printf("%s Interactive log streaming from %s:\n", qc.Colorize("====", qc.ColorBlue), logStreams[0])
 	fmt.Println(strings.Repeat("-", 60))
-	fmt.Printf("%s Press Enter to check for new logs, auto-refresh every 3s, Ctrl+C to exit\n", color("Tip:", ColorYellow))
+	fmt.Printf("%s Press Enter to check for new logs, auto-refresh every 3s, Ctrl+C to exit\n", qc.Colorize("Tip:", qc.ColorYellow))
 	fmt.Println(strings.Repeat("-", 60))
 
 	// Initial log fetch
@@ -159,7 +160,7 @@ func streamLogs(ctx context.Context, config *Config, logGroupName string, logStr
 		return err
 	}
 	// Show the action prompt after initial log fetch
-	fmt.Printf("%s Press Enter to check for new logs, auto-refresh every 3s, Ctrl+C to exit: ", color("Action:", ColorCyan))
+	fmt.Printf("%s Press Enter to check for new logs, auto-refresh every 3s, Ctrl+C to exit: ", qc.Colorize("Action:", qc.ColorCyan))
 
 	// Auto-refresh ticker
 	ticker := time.NewTicker(3 * time.Second)
@@ -168,7 +169,7 @@ func streamLogs(ctx context.Context, config *Config, logGroupName string, logStr
 	for {
 		select {
 		case <-sigChan:
-			fmt.Printf("\n%s Log streaming stopped by user.\n", color("Info:", ColorGreen))
+			fmt.Printf("\n%s Log streaming stopped by user.\n", qc.Colorize("Info:", qc.ColorGreen))
 			return nil
 		case <-ticker.C:
 			// Auto refresh (quiet on no-new-logs)
@@ -214,10 +215,10 @@ func fetchAndDisplayLogs(ctx context.Context, config *Config, logGroupName, logS
 
 	if newLogsCount == 0 {
 		if !quiet {
-			fmt.Printf("%s No new logs since last check.\n", color("Info:", ColorYellow))
+			fmt.Printf("%s No new logs since last check.\n", qc.Colorize("Info:", qc.ColorYellow))
 		}
 	} else {
-		fmt.Printf("%s %d new log entries displayed.\n", color("Info:", ColorGreen), newLogsCount)
+		fmt.Printf("%s %d new log entries displayed.\n", qc.Colorize("Info:", qc.ColorGreen), newLogsCount)
 	}
 
 	return nil
