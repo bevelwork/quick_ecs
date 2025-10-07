@@ -13,8 +13,6 @@ require (
 	github.com/bevelwork/quick_color v0.0.0-20251007131624-980d1a19834d
 )
 
-replace github.com/bevelwork/quick_color => ../quick_color
-
 require (
 	github.com/aws/aws-sdk-go-v2 v1.39.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.1 // indirect
