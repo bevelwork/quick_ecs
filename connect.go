@@ -7,9 +7,11 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
@@ -286,12 +288,32 @@ func tryECSExec(config *Config, clusterName, taskARN, containerName string) erro
 	// Set up the command to use the same AWS configuration
 	cmd.Env = os.Environ()
 
-	// Run the command
+	// Run the command with standard I/O
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// Set up signal forwarding to the child process
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+
+	// Forward signals to the child process
+	go func() {
+		for sig := range sigChan {
+			if cmd.Process != nil {
+				cmd.Process.Signal(sig)
+			}
+		}
+	}()
+
+	// Wait for the command to complete
+	return cmd.Wait()
 }
 
 // enableECSExecForService enables ECS Exec for the service

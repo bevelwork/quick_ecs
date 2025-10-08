@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -186,6 +187,137 @@ func streamLogs(ctx context.Context, config *Config, logGroupName string, logStr
 			}
 		}
 	}
+}
+
+// streamTaskLogsAction allows user to select a specific task and streams only its logs
+func streamTaskLogsAction(ctx context.Context, config *Config, selectedCluster *ClusterInfo, selectedService *ServiceInfo, taskDef *types.TaskDefinition) {
+	fmt.Printf("Streaming logs for a specific task in service: %s\n", qc.ColorizeBold(selectedService.Name, qc.ColorCyan))
+
+	if err := streamTaskLogsInteractive(ctx, config, selectedCluster.Name, selectedService.Name, taskDef); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// streamTaskLogsRepeat supports repeat-last behavior by prompting again for a task
+func streamTaskLogsRepeat(ctx context.Context, config *Config, clusterName, serviceName string, taskDef *types.TaskDefinition) error {
+	return streamTaskLogsInteractive(ctx, config, clusterName, serviceName, taskDef)
+}
+
+// streamTaskLogsInteractive lists running tasks with metadata and streams the selected task's logs
+func streamTaskLogsInteractive(ctx context.Context, config *Config, clusterName, serviceName string, taskDef *types.TaskDefinition) error {
+	// Resolve log group first
+	logGroupName, err := getLogGroupName(taskDef)
+	if err != nil {
+		return fmt.Errorf("failed to get log group name: %v", err)
+	}
+
+	// List running tasks
+	taskArns, err := getRunningTasks(ctx, config, clusterName, serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to get running tasks: %v", err)
+	}
+	if len(taskArns) == 0 {
+		return fmt.Errorf("no running tasks found for service %s", serviceName)
+	}
+
+	// Describe tasks for metadata
+	desc, err := config.ECSClient.DescribeTasks(ctx, &ecs.DescribeTasksInput{Cluster: &clusterName, Tasks: taskArns})
+	if err != nil {
+		return fmt.Errorf("failed to describe tasks: %v", err)
+	}
+	if len(desc.Tasks) == 0 {
+		return fmt.Errorf("no task details available")
+	}
+
+	// Build display list with version and running duration
+	fmt.Printf("\n%s\n", qc.Colorize("Running Tasks:", qc.ColorBlue))
+	for i, t := range desc.Tasks {
+		taskID := extractTaskID(*t.TaskArn)
+		version := ""
+		if t.TaskDefinitionArn != nil {
+			if idx := strings.LastIndex(*t.TaskDefinitionArn, ":"); idx != -1 {
+				version = (*t.TaskDefinitionArn)[idx+1:]
+			}
+		}
+		dur := "unknown"
+		if t.StartedAt != nil {
+			dur = humanDuration(time.Since(*t.StartedAt))
+		}
+		fmt.Printf("%3d. Task %s  def:%s  running:%s\n", i+1, qc.ColorizeBold(taskID, qc.ColorCyan), version, dur)
+	}
+
+	// Prompt for selection
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s", qc.Colorize("Select task. Press Enter for first option, or non-numeric input will exit: ", qc.ColorYellow))
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	input = strings.TrimSpace(input)
+	idx := 1
+	if input != "" {
+		n, err := strconv.Atoi(input)
+		if err != nil || n < 1 || n > len(desc.Tasks) {
+			fmt.Println("Invalid selection. Exiting")
+			os.Exit(0)
+		}
+		idx = n
+	}
+
+	chosen := desc.Tasks[idx-1]
+	// Resolve a log stream for this task
+	streamName, err := resolveSingleTaskLogStream(ctx, config, logGroupName, *chosen.TaskArn)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\nStreaming logs for task %s\n", qc.ColorizeBold(extractTaskID(*chosen.TaskArn), qc.ColorGreen))
+	fmt.Printf("Press Ctrl+C to stop streaming\n\n")
+
+	return streamLogs(ctx, config, logGroupName, []string{streamName})
+}
+
+// resolveSingleTaskLogStream finds the most recent log stream for a specific task ID within a log group
+func resolveSingleTaskLogStream(ctx context.Context, config *Config, logGroupName, taskArn string) (string, error) {
+	taskID := extractTaskID(taskArn)
+
+	out, err := config.CloudWatchLogsClient.DescribeLogStreams(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
+		LogGroupName: &logGroupName,
+		OrderBy:      cloudwatchlogstypes.OrderByLastEventTime,
+		Descending:   boolPtr(true),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to describe log streams: %v", err)
+	}
+
+	for _, ls := range out.LogStreams {
+		if ls.LogStreamName == nil {
+			continue
+		}
+		if strings.Contains(*ls.LogStreamName, taskID) {
+			return *ls.LogStreamName, nil
+		}
+	}
+	return "", fmt.Errorf("no log stream found for task %s", taskID)
+}
+
+// humanDuration makes a short human-friendly duration like 1h23m, 5m10s
+func humanDuration(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	// Limit granularity to seconds
+	seconds := int(d.Seconds())
+	hours := seconds / 3600
+	minutes := (seconds % 3600) / 60
+	secs := seconds % 60
+	if hours > 0 {
+		return fmt.Sprintf("%dh%02dm", hours, minutes)
+	}
+	if minutes > 0 {
+		return fmt.Sprintf("%dm%02ds", minutes, secs)
+	}
+	return fmt.Sprintf("%ds", secs)
 }
 
 // fetchAndDisplayLogs fetches and displays new log events

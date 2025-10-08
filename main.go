@@ -169,6 +169,9 @@ func main() {
 	case "logs":
 		streamLogsAction(ctx, config, selectedCluster, selectedService, taskDef)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "logs"})
+	case "task-logs":
+		streamTaskLogsAction(ctx, config, selectedCluster, selectedService, taskDef)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "task-logs"})
 	case "connect":
 		connectAction(ctx, config, selectedCluster, selectedService, taskDef)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "connect"})
@@ -663,7 +666,8 @@ func selectAction() string {
 		{PrimaryShortcut: "security-groups", Shortcuts: []string{"sg", "security", "secgroups"}, Description: "[Sg] Security groups (ALB and Task)"},
 		{PrimaryShortcut: "healthchecks", Shortcuts: []string{"h", "hc", "health", "healthchecks", "health-checks"}, Description: "[H]ealth checks (task defs and ALB)"},
 		{PrimaryShortcut: "image", Shortcuts: []string{"i", "img", "image"}, Description: "[I]mage - Update container image version"},
-		{PrimaryShortcut: "logs", Shortcuts: []string{"l", "log", "logs"}, Description: "[L]ogs - Stream service logs"},
+		{PrimaryShortcut: "logs", Shortcuts: []string{"l", "log", "logs"}, Description: "[L]ogs - Stream service-wide logs (all running tasks)"},
+		{PrimaryShortcut: "task-logs", Shortcuts: []string{"tl", "tlog", "tasklog", "task-logs"}, Description: "[TL] Task logs - Stream logs for a specific task"},
 		{PrimaryShortcut: "service-config", Shortcuts: []string{"s", "svc", "service"}, Description: "[S]ervice configuration"},
 		{PrimaryShortcut: "task-defs", Shortcuts: []string{"t", "td", "task", "taskdefs", "task-defs", "task-definition"}, Description: "[T]ask definition history (latest 10)"},
 		{PrimaryShortcut: "enable-exec", Shortcuts: []string{"enable", "enable-exec", "enable-execution", "enable-execution-mode", "exec-enable"}, Description: "Enable e[X]ecution mode (ECS Exec)"},
@@ -765,6 +769,9 @@ func runRepeatLastAction(ctx context.Context, config *Config, last *LastState) e
 	case "logs":
 		fmt.Printf("%s Repeating: stream logs for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return streamServiceLogs(ctx, config, last.ClusterName, last.ServiceName, taskDef)
+	case "task-logs":
+		fmt.Printf("%s Repeating: stream task logs for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
+		return streamTaskLogsRepeat(ctx, config, last.ClusterName, last.ServiceName, taskDef)
 	case "connect":
 		fmt.Printf("%s Repeating: connect to container for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return connectToContainer(ctx, config, last.ClusterName, last.ServiceName, taskDef)

@@ -2,6 +2,16 @@
 
 All notable changes to `quick-ecs` will be documented in this file.
 
+### [1.7.20251008]
+- Feature: Added `task-logs` action to stream logs for a specific running task
+  - Shows each task's task definition version and how long it's been running
+- Improvement: Clarified `logs` action to indicate service-wide streaming
+- Docs: Updated README with both logging options
+- Improvement: Exec sessions now forward Ctrl+C to the container instead of exiting
+  - Added signal forwarding to child process so SIGINT/SIGTERM reach the remote shell
+  - Prevents quick-ecs from terminating when sending interrupts during interactive exec
+  - Normal keyboard input flows through to AWS CLI and session-manager-plugin without interference
+
 ### [1.7.20251007]
 - Standardized terminal output using `github.com/bevelwork/quick_color` across commands
   - Consistent color palette and emphasis for statuses, headings, and tags

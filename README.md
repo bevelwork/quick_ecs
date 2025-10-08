@@ -72,6 +72,10 @@ The tool invokes `aws ecs execute-command` and will offer to enable ECS Exec on 
 - Setup and considerations: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html
 - Troubleshooting: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/troubleshooting.html
 
+### Logs
+- Logs: Stream service-wide logs (all running tasks)
+- Task logs: Stream logs for a specific running task. You'll see each task's task definition version and how long it has been running to help choose newest/oldest.
+
 ### Health Checks
 - Task checks run inside the container (command-based).
 - ALB checks probe over the network, so SGs, NACLs, routing and target port exposure matter.

@@ -9,7 +9,7 @@ const (
 	Major = 1
 	Minor = 7
 	// PatchDate uses YYYYMMDD format
-	PatchDate = "20251007"
+	PatchDate = "20251008"
 )
 
 // Full is the complete version string. Keep this in sync with Major, Minor, and PatchDate.
