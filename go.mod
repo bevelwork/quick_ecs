@@ -10,8 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.50.6
 	github.com/aws/aws-sdk-go-v2/service/iam v1.47.7
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.6
-	github.com/bevelwork/quick_color v0.0.0-20251007131624-980d1a19834d
-	golang.org/x/term v0.25.0
+	github.com/bevelwork/quick_color v1.2.20251008
 )
 
 require (
@@ -27,5 +26,4 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.29.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.1 // indirect
 	github.com/aws/smithy-go v1.23.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
 )
