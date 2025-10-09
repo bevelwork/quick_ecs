@@ -157,6 +157,9 @@ func main() {
 	action := selectAction()
 
 	switch action {
+	case "dashboard":
+		dashboardAction(ctx, config, selectedCluster, selectedService, taskDef)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "dashboard"})
 	case "image":
 		updateImageAction(ctx, config, selectedCluster, selectedService, taskDef)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "image"})
@@ -172,6 +175,9 @@ func main() {
 	case "task-logs":
 		streamTaskLogsAction(ctx, config, selectedCluster, selectedService, taskDef)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "task-logs"})
+	case "watch-deployments":
+		watchDeploymentsAction(ctx, config, selectedCluster, selectedService, taskDef)
+		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "watch-deployments"})
 	case "connect":
 		connectAction(ctx, config, selectedCluster, selectedService, taskDef)
 		saveLastState(&LastState{Region: config.Region, ClusterName: selectedCluster.Name, ServiceName: selectedService.Name, Action: "connect"})
@@ -659,6 +665,7 @@ type Action struct {
 func selectAction() string {
 	// Define actions with canonical keys in PrimaryShortcut
 	actions := []Action{
+		{PrimaryShortcut: "dashboard", Shortcuts: []string{"d", "dash", "dashboard"}, Description: "[D]ashboard - Live monitoring of service config, deployments, tasks, and logs"},
 		{PrimaryShortcut: "connect", Shortcuts: []string{"e", "x", "exec", "conn", "connect"}, Description: "[E]xec - Establish terminal session to container"},
 		{PrimaryShortcut: "capacity", Shortcuts: []string{"cap"}, Description: "[Cap]acity - Update service capacity (min, desired, max)"},
 		{PrimaryShortcut: "check", Shortcuts: []string{"c", "chk"}, Description: "[C]heck configuration"},
@@ -668,6 +675,7 @@ func selectAction() string {
 		{PrimaryShortcut: "image", Shortcuts: []string{"i", "img", "image"}, Description: "[I]mage - Update container image version"},
 		{PrimaryShortcut: "logs", Shortcuts: []string{"l", "log", "logs"}, Description: "[L]ogs - Stream service-wide logs (all running tasks)"},
 		{PrimaryShortcut: "task-logs", Shortcuts: []string{"tl", "tlog", "tasklog", "task-logs"}, Description: "[TL] Task logs - Stream logs for a specific task"},
+		{PrimaryShortcut: "watch-deployments", Shortcuts: []string{"w", "watch", "deployments", "watch-deployments"}, Description: "[W]atch deployments - View and stream logs for recent deployments"},
 		{PrimaryShortcut: "service-config", Shortcuts: []string{"s", "svc", "service"}, Description: "[S]ervice configuration"},
 		{PrimaryShortcut: "task-defs", Shortcuts: []string{"t", "td", "task", "taskdefs", "task-defs", "task-definition"}, Description: "[T]ask definition history (latest 10)"},
 		{PrimaryShortcut: "enable-exec", Shortcuts: []string{"enable", "enable-exec", "enable-execution", "enable-execution-mode", "exec-enable"}, Description: "Enable e[X]ecution mode (ECS Exec)"},
@@ -766,12 +774,20 @@ func runRepeatLastAction(ctx context.Context, config *Config, last *LastState) e
 	selectedService := &ServiceInfo{Name: last.ServiceName}
 
 	switch last.Action {
+	case "dashboard":
+		fmt.Printf("%s Repeating: dashboard for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
+		dashboardAction(ctx, config, selectedCluster, selectedService, taskDef)
+		return nil
 	case "logs":
 		fmt.Printf("%s Repeating: stream logs for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return streamServiceLogs(ctx, config, last.ClusterName, last.ServiceName, taskDef)
 	case "task-logs":
 		fmt.Printf("%s Repeating: stream task logs for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return streamTaskLogsRepeat(ctx, config, last.ClusterName, last.ServiceName, taskDef)
+	case "watch-deployments":
+		fmt.Printf("%s Repeating: watch deployments for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
+		watchDeploymentsAction(ctx, config, selectedCluster, selectedService, taskDef)
+		return nil
 	case "connect":
 		fmt.Printf("%s Repeating: connect to container for %s/%s\n", qc.Colorize("Info:", qc.ColorCyan), qc.ColorizeBold(last.ClusterName, qc.ColorGreen), qc.ColorizeBold(last.ServiceName, qc.ColorGreen))
 		return connectToContainer(ctx, config, last.ClusterName, last.ServiceName, taskDef)

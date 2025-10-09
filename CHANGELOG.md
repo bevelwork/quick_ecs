@@ -2,6 +2,23 @@
 
 All notable changes to `quick-ecs` will be documented in this file.
 
+### [1.10.20250109]
+- Feature: Added `watch-deployments` action to view and stream logs for recent deployments
+  - Displays the last 10 deployments for a service with status, timestamps, and task counts
+  - Color-coded deployment status (ACTIVE, FAILED, INACTIVE) for quick visual identification
+  - Interactive selection to choose which deployment to monitor
+  - Streams logs specifically for tasks belonging to the selected deployment
+  - Supports repeat last action functionality
+  - Integrates with existing CloudWatch logs infrastructure
+
+### [1.9.20250109]
+- Improvement: Enhanced force update behavior with intelligent deployment monitoring
+  - Reduced polling interval from 10 seconds to 3 seconds for more responsive monitoring
+  - Now tracks the specific new deployment instead of checking all deployments
+  - Detects container launch failures and exits with non-zero code for proper error handling
+  - Waits for old tasks to begin deregistering before exiting successfully
+  - Improved user feedback with clearer status messages throughout the deployment process
+
 ### [1.7.20251008]
 - Feature: Added `task-logs` action to stream logs for a specific running task
   - Shows each task's task definition version and how long it's been running
